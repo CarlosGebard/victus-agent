@@ -1,0 +1,1 @@
+"""Projection read-model contracts."""

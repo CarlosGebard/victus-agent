@@ -1,0 +1,14 @@
+router_version: victus-router-v1
+thresholds:
+  accept_score: 0.72
+  accept_margin: 0.08
+  multi_score: 0.66
+  multi_second_score: 0.58
+  clarify_below: 0.42
+score_weights:
+  positive: 0.50
+  definition: 0.25
+  boundary: 0.15
+  context: 0.0
+  entity_signal: 0.0
+  negative_penalty: 0.25

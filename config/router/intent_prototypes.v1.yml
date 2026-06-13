@@ -1,0 +1,120 @@
+router_version: victus-router-v1
+intents:
+  - intent_type: log_update_data
+    route: EventCaptureGraph
+    definition:
+      - log meals, biometrics, symptoms, sleep, hydration, or factual nutrition/lifestyle events
+    positive_examples:
+      - hoy comi pollo con arroz en el almuerzo
+      - registre mi peso en 82 kilos
+      - ate oatmeal and yogurt for breakfast
+      - dormi seis horas anoche
+    negative_examples:
+      - hazme un plan de comidas
+      - que dice la evidencia sobre creatina
+    boundary_examples:
+      - actualiza que hoy tome dos litros de agua
+
+  - intent_type: profile_update
+    route: ProfileUpdateGraph
+    definition:
+      - update durable nutrition profile context such as restrictions, preferences, allergies, schedule, or food dislikes
+    positive_examples:
+      - soy intolerante a la lactosa
+      - no como pescado
+      - prefiero desayunos rapidos
+      - add that I avoid peanuts
+    negative_examples:
+      - hoy comi pan con huevo
+      - crea un menu semanal
+    boundary_examples:
+      - recuerda que prefiero comidas vegetarianas
+
+  - intent_type: new_plan
+    route: PlanningSessionGraph
+    definition:
+      - create a new diet, meal, nutrition, or lifestyle plan from goals and constraints
+    positive_examples:
+      - hazme un plan de comidas para bajar grasa
+      - quiero empezar un plan para mejorar mi alimentacion
+      - create a meal plan for muscle gain
+      - necesito un menu semanal saludable
+    negative_examples:
+      - cambia mi plan actual
+      - hoy comi arroz
+    boundary_examples:
+      - quiero bajar grasa sin perder musculo
+
+  - intent_type: revise_plan
+    route: PlanRevisionGraph
+    definition:
+      - revise or adapt an existing nutrition plan using feedback, new constraints, or adherence issues
+    positive_examples:
+      - cambia mi plan para que sea sin lactosa
+      - ajusta mi menu porque tengo menos tiempo para cocinar
+      - remove eggs from my current meal plan
+      - sube la proteina del plan
+    negative_examples:
+      - hazme un plan desde cero
+      - que evidencia hay sobre ayuno
+    boundary_examples:
+      - este plan me da hambre en la noche
+
+  - intent_type: weekly_review
+    route: WeeklyReviewGraph
+    definition:
+      - review recent nutrition adherence, logged meals, biometrics, symptoms, and goal progress
+    positive_examples:
+      - revisemos mi semana
+      - analiza como me fue esta semana con la comida
+      - weekly nutrition review
+      - resume mis avances de la semana
+    negative_examples:
+      - crea un nuevo plan
+      - registra mi almuerzo
+    boundary_examples:
+      - como voy con mi objetivo esta semana
+
+  - intent_type: evidence_question
+    route: EvidenceAnswerGraph
+    definition:
+      - answer scientific or evidence questions about nutrition, supplements, diet patterns, or lifestyle
+    positive_examples:
+      - que dice la evidencia sobre creatina y fuerza
+      - hay estudios sobre ayuno intermitente
+      - what does the evidence say about high protein diets
+      - es saludable comer huevos todos los dias segun la ciencia
+    negative_examples:
+      - registra que tome creatina
+      - hazme un plan con mas proteina
+    boundary_examples:
+      - explica si la creatina sirve y si debo considerarla
+
+  - intent_type: risk_medical_unsafe
+    route: SafetyTriageRoute
+    definition:
+      - urgent symptoms, unsafe medical requests, dangerous restriction, eating disorder risk, allergy risk, or medication changes
+    positive_examples:
+      - me duele el pecho y me falta el aire
+      - quiero dejar mis medicamentos para la diabetes
+      - puedo hacer una dieta de 500 calorias
+      - tengo una reaccion alergica despues de comer mani
+    negative_examples:
+      - quiero un menu semanal
+      - comi arroz con pollo
+    boundary_examples:
+      - tengo presion alta y quiero tomar creatina
+
+  - intent_type: mixed_ambiguous
+    route: MixedIntentResolver
+    definition:
+      - multiple intents or unclear request that needs splitting, sequencing, or clarification
+    positive_examples:
+      - registra mi almuerzo y cambia mi plan para manana
+      - quiero bajar grasa y dime si la creatina sirve
+      - no se que comer y tambien me senti mareado
+    negative_examples:
+      - hoy comi avena
+      - revisemos mi semana
+    boundary_examples:
+      - ayudame con mi alimentacion
