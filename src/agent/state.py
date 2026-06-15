@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
-from events.models import ToolEventRef
-from projections.models import (
+from domain.events.models import ToolEventRef
+from domain.projections.models import (
     ConstraintProjection,
     NutritionStatusProjection,
     PlanningHistoryProjection,
     UserProfileProjection,
 )
-from tools.models import ToolResult
+from domain.tools.models import ToolResult
+from domain.session_context.models import BootstrapContext, ConversationStateSummary, PendingInteractionState
 
 
 class RequestState(TypedDict, total=False):
@@ -20,6 +21,16 @@ class RequestState(TypedDict, total=False):
     received_at: str
     locale: str
     timezone: str
+    conversation_id: str
+    routing_query: str
+
+
+class SessionContextState(TypedDict, total=False):
+    conversation_id: str
+    summary: ConversationStateSummary
+    pending_interaction: PendingInteractionState
+    bootstrap: BootstrapContext
+    updated_summary: ConversationStateSummary
 
 
 class SafetyState(TypedDict):
@@ -90,6 +101,7 @@ class AuditState(TypedDict):
 
 class VictusGraphState(TypedDict, total=False):
     request: RequestState
+    session_context: SessionContextState
     safety: SafetyState
     intent: IntentState
     projections: ProjectionState

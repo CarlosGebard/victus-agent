@@ -97,18 +97,13 @@ Codex should treat `300-CONTRACTS.md` as the strongest source of implementation 
 ## 6. Expected Repository Structure
 
 ```text
-src/                  -> application code, graph nodes, tool handlers, projectors
-src/agent/            -> LangGraph graph, state models, routing orchestration
-src/auth/             -> account context resolver and auth middleware integration
-src/router/           -> intent route definitions, embedding search, thresholds
-src/tools/            -> typed backend tool handlers
-src/events/           -> event store append/read and event contracts
-src/projectors/       -> projection rebuild and incremental projectors
-src/db/               -> migrations, database access, SQL models
-src/safety/           -> safety policy and triage logic
-src/evidence/         -> evidence RAG adapter interface
+src/agent/            -> LangGraph graph, state, and orchestration nodes
+src/application/      -> ports, config, routing, and application services
+src/domain/           -> domain contracts, event models, projections, tools, session context models
+src/infrastructure/   -> database schema/engine, repositories, and provider adapters
+src/victus_cli/       -> local operational CLI
 config/               -> route config, safety config, environment defaults
-scripts/              -> seed, migration, smoke, and operational commands
+ops/                  -> operational helper scripts
 tests/                -> unit, integration, contract, and smoke tests
 ```
 

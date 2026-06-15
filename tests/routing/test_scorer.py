@@ -1,5 +1,5 @@
-from victus_routing.prototype_store import IntentPrototype, PrototypeStore, ScoreWeights
-from victus_routing.scorer import IntentScorer, cosine_similarity
+from application.routing.prototype_store import IntentPrototype, PrototypeStore, ScoreWeights
+from application.routing.scorer import IntentScorer, cosine_similarity
 
 
 class StaticEmbedder:

@@ -1,4 +1,4 @@
-from projections.models import (
+from domain.projections.models import (
     ConstraintProjection,
     NutritionStatusProjection,
     PlanningHistoryProjection,

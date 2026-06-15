@@ -11,8 +11,9 @@ updated_at: 2026-06-12
 ```text
 receive user input
   -> normalize request
-  -> load lightweight context
+  -> context bootstrap
   -> safety precheck
+  -> build standalone routing query
   -> if blocked: safety response
   -> route intent
   -> load node-specific projections
@@ -21,6 +22,7 @@ receive user input
   -> append events if needed
   -> run projectors affected by emitted events
   -> compose response
+  -> update conversation state summary
   -> return route, response, event refs, warnings
 ```
 
@@ -37,3 +39,24 @@ tool input validation
 ```
 
 No node should mutate projections directly.
+
+## Summary After Response
+
+After the assistant response is composed, the runtime updates `ConversationStateSummary`.
+
+The current implementation uses a deterministic updater. The V1 target allows an LLM-backed summarizer through `LLMClient`, but that call must produce bounded structured JSON and must not receive full chat history by default.
+
+## Session Context Rule
+
+The runtime must not load full conversation history by default.
+
+Use this order when building turn context:
+
+```text
+PendingInteractionState
+  -> ConversationStateSummary
+  -> recent user messages
+  -> last tool summary
+  -> projections
+  -> full history only as fallback
+```

@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from victus_routing.embeddings import Embedder
-from victus_routing.policy import RoutingPolicy
-from victus_routing.prototype_store import PrototypeStore, RouterThresholds, load_thresholds
-from victus_routing.router import IntentRouter
-from victus_routing.safety_gate import SafetyGate
+from application.routing.embeddings import Embedder
+from application.routing.policy import RoutingPolicy
+from application.routing.prototype_store import PrototypeStore, RouterThresholds, load_thresholds
+from application.routing.router import IntentRouter
+from application.routing.safety_gate import SafetyGate
 
 
 class LexicalTestEmbedder:

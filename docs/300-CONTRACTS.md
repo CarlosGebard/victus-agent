@@ -20,12 +20,15 @@ It is the implementation authority for schemas, event semantics, route labels, t
 
 - The event store is the canonical user history.
 - Projections are derived read models.
+- Session context is compact conversational memory, not domain truth.
 - LangGraph state is orchestration state only.
 - Account identity and user profile identity are separate concepts.
 - Tool handlers validate and execute; the LLM proposes but does not persist directly.
 - Router embeddings assist classification but do not bypass safety or ambiguity rules.
 - All write operations require idempotency keys.
 - Corrections are represented by new events, not mutation of old events.
+
+Fundamental shared contracts imported from `CarlosGebard/victus-docs` live under `docs/contracts/fundamental/` and must be synchronized with `uv run contracts sync`; do not edit those imported files manually.
 
 ## 3. Identity Contracts
 
@@ -815,4 +818,3 @@ Major changes:
 - changing vector dimension without migration
 - removing fields or status values
 - allowing direct projection mutation from tools or graph nodes
-

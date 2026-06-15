@@ -1,4 +1,4 @@
-from victus_routing.safety_gate import SafetyGate
+from application.routing.safety_gate import SafetyGate
 
 
 def test_urgent_chest_pain_and_shortness_of_breath() -> None:

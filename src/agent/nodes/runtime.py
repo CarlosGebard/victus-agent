@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from agent.state import VictusGraphState
 from application.ports.llm import LLMClient, LLMRequest
-from victus_routing.normalizer import normalize_text
-from victus_routing.router import IntentRouter
-from victus_routing.safety_gate import SafetyGate
+from application.routing.normalizer import normalize_text
+from application.routing.router import IntentRouter
+from application.routing.safety_gate import SafetyGate
 
 
 def normalize_request(state: VictusGraphState) -> VictusGraphState:
@@ -37,7 +37,7 @@ def safety_precheck(state: VictusGraphState) -> VictusGraphState:
 def route_intent(router: IntentRouter):
     def node(state: VictusGraphState) -> VictusGraphState:
         request = state.get("request", {})
-        text = request.get("raw_text", "")
+        text = request.get("routing_query") or request.get("raw_text", "")
         decision = router.route(text)
         intent = {
             "primary_intent": decision.intent_type or decision.decision,

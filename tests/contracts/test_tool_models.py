@@ -1,8 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from events.models import ToolEventRef
-from tools.models import ClarificationRequest, ToolResult
+from domain.events.models import ToolEventRef
+from domain.tools.models import ClarificationRequest, ToolResult
 
 
 def test_tool_result_defaults_to_safe_success_envelope() -> None:

@@ -38,10 +38,21 @@ The application layer accesses model providers only through the internal `LLMCli
 port. Provider-specific LiteLLM code belongs in `src/infrastructure/llm/` and must
 not be imported by LangGraph nodes or application use cases.
 
+Source code follows a layer-oriented layout:
+
+```text
+src/domain/             -> domain contracts and pure models
+src/application/        -> ports, config, routing, and application services
+src/infrastructure/     -> database, repositories, and provider adapters
+src/agent/              -> LangGraph orchestration
+src/victus_cli/         -> local operational CLI
+```
+
 ```text
 Authenticated Request
   -> Account Context Resolver
   -> Request Normalizer
+  -> Context Bootstrap
   -> Safety Precheck
   -> Embedding-Assisted Intent Router
   -> Graph Branch / Node
@@ -49,6 +60,7 @@ Authenticated Request
   -> Event Store Append
   -> Projector Update
   -> Response Composer
+  -> Summary After Response
   -> Trace + Result
 ```
 
@@ -149,6 +161,37 @@ Boundary:
 - must run before planning and event mutation
 - may run again before response finalization
 - does not generate diet plans
+
+### 2.4.1 Session Context Layer
+
+Responsibility: preserve conversation continuity without loading full chat history by default.
+
+Inputs:
+
+- current request text
+- latest `ConversationStateSummary`
+- active `PendingInteractionState`
+- minimal recent context when available
+
+Outputs:
+
+- bootstrapped context for the graph
+- standalone routing query
+- updated structured summary after response
+
+Boundary:
+
+- does not own domain truth
+- does not duplicate projections or events
+- does not store large artifacts or full tool outputs
+- prioritizes pending interaction state for short replies
+
+The graph owns two explicit session-context nodes:
+
+- `ContextBootstrapNode`: loads compact session state and writes `request.routing_query` before safety/routing.
+- `SummaryAfterResponseNode`: updates `ConversationStateSummary` after response composition.
+
+The current summary implementation is deterministic. The target architecture allows an LLM-backed summarizer after final response composition through the `LLMClient` port, but it must emit structured JSON and must not receive full chat history by default.
 
 ### 2.5 Embedding-Assisted Intent Router
 

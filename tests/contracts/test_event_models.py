@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from events.models import (
+from domain.events.models import (
     EventActor,
     MealLoggedPayload,
     ToolEventRef,

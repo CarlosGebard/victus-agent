@@ -95,12 +95,16 @@ uv run --extra test victus test
 uv run --extra test victus test tests/routing
 uv run --extra test victus compile
 uv run --extra test victus check
+uv run victus graph-dev --no-browser --port 2024
 uv run victus db-upgrade
 uv run victus db-current
 uv run victus smoke-event-store
 uv run victus smoke-projections
 uv run victus smoke-projectors
 uv run victus projections-rebuild local-smoke-user
+uv run contracts list
+uv run contracts sync
+uv run contracts validate
 ```
 
 Local PostgreSQL can be started with:
@@ -131,6 +135,7 @@ LLM_PROVIDER=...
 LLM_MODEL=...
 LITELLM_PROXY_API_BASE=https://...
 LITELLM_PROXY_API_KEY=...
+LANGSMITH_API_KEY=...
 ```
 
 ### Optional Environment Variables
@@ -155,6 +160,22 @@ LITELLM_KEY=...
 - Auth configuration must be validated at startup outside local mode.
 - Production must not run with `FOOD_DATA_PROVIDER=stub` unless explicitly allowed by a feature flag.
 - LiteLLM proxy credentials must come from environment variables and must not be committed, printed, or stored in runtime traces.
+- `LANGSMITH_API_KEY` is required for LangGraph Studio graph visualization, not for the core local runtime.
+
+## 4.1 Documentation Sync
+
+Repository docs are published to `CarlosGebard/victus-docs` by `.github/workflows/sync-docs.yml` on pushes to `main` that change `README.md` or `docs/**`.
+
+Fundamental contracts are imported from the central docs repo with:
+
+```bash
+uv run contracts sync
+uv run contracts validate
+```
+
+Files under `docs/contracts/fundamental/` are generated sync outputs and should not be edited manually.
+
+See `docs/runbooks/docs-sync.md`.
 
 ## 5. Database Operations
 

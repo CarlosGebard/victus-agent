@@ -14,6 +14,12 @@ def main() -> int:
 
     subparsers.add_parser("compile", help="Compile src and tests.")
     subparsers.add_parser("check", help="Run tests and compile checks.")
+    graph_dev_parser = subparsers.add_parser("graph-dev", help="Start LangGraph dev server.")
+    graph_dev_parser.add_argument(
+        "langgraph_args",
+        nargs=argparse.REMAINDER,
+        help="Additional langgraph dev args.",
+    )
     subparsers.add_parser("db-upgrade", help="Run Alembic migrations to head.")
     subparsers.add_parser("db-current", help="Show current Alembic revision.")
     subparsers.add_parser("smoke-event-store", help="Append and replay one local test event.")
@@ -33,6 +39,8 @@ def main() -> int:
         if test_code != 0:
             return test_code
         return _run([sys.executable, "-m", "compileall", "src", "tests"])
+    if args.command == "graph-dev":
+        return _run(["langgraph", "dev", "--config", "langgraph.json", *args.langgraph_args])
     if args.command == "db-upgrade":
         return _run([sys.executable, "-m", "alembic", "upgrade", "head"])
     if args.command == "db-current":
@@ -58,9 +66,9 @@ def _smoke_event_store() -> int:
     from datetime import UTC, datetime
     from uuid import uuid4
 
-    from db.engine import build_engine
-    from events.models import EventActor, MealLoggedPayload, UserEventEnvelope
-    from events.repository import PostgresEventStore
+    from infrastructure.db.engine import build_engine
+    from domain.events.models import EventActor, MealLoggedPayload, UserEventEnvelope
+    from infrastructure.repositories.events import PostgresEventStore
 
     now = datetime.now(UTC).isoformat()
     user_id = "local-smoke-user"
@@ -107,9 +115,9 @@ def _smoke_event_store() -> int:
 def _smoke_projections() -> int:
     from datetime import UTC, datetime
 
-    from db.engine import build_engine
-    from projections.models import UserProfileProjection
-    from projections.repository import ProjectionRepository
+    from infrastructure.db.engine import build_engine
+    from domain.projections.models import UserProfileProjection
+    from infrastructure.repositories.projections import ProjectionRepository
 
     now = datetime.now(UTC).isoformat()
     user_id = "local-smoke-user"
@@ -135,11 +143,11 @@ def _smoke_projectors() -> int:
     from datetime import UTC, datetime
     from uuid import uuid4
 
-    from db.engine import build_engine
-    from events.models import EventActor, MealLoggedPayload, UserEventEnvelope
-    from events.repository import PostgresEventStore
-    from projections.repository import ProjectionRepository
-    from projections.runner import rebuild_nutrition_status
+    from infrastructure.db.engine import build_engine
+    from domain.events.models import EventActor, MealLoggedPayload, UserEventEnvelope
+    from infrastructure.repositories.events import PostgresEventStore
+    from infrastructure.repositories.projections import ProjectionRepository
+    from application.projections.runner import rebuild_nutrition_status
 
     now = datetime.now(UTC).isoformat()
     user_id = "local-smoke-user"
@@ -186,10 +194,10 @@ def _smoke_projectors() -> int:
 
 
 def _projections_rebuild(user_id: str) -> int:
-    from db.engine import build_engine
-    from events.repository import PostgresEventStore
-    from projections.repository import ProjectionRepository
-    from projections.runner import rebuild_all_for_user
+    from infrastructure.db.engine import build_engine
+    from infrastructure.repositories.events import PostgresEventStore
+    from infrastructure.repositories.projections import ProjectionRepository
+    from application.projections.runner import rebuild_all_for_user
 
     engine = build_engine()
     with engine.begin() as connection:

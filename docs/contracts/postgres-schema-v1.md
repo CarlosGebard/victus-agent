@@ -184,6 +184,39 @@ CREATE INDEX IF NOT EXISTS ix_clarification_state_user_status
 ON clarification_state (user_id, status);
 ```
 
+## 8. Session Context Tables
+
+```sql
+CREATE TABLE IF NOT EXISTS conversation_state_summaries (
+    conversation_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    summary_version TEXT NOT NULL,
+    summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+    should_inject_next_turn BOOLEAN NOT NULL DEFAULT true,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ix_conversation_state_summaries_user_updated
+ON conversation_state_summaries (user_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS pending_interaction_state (
+    conversation_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    pending_kind TEXT NOT NULL CHECK (pending_kind IN ('question', 'confirmation', 'choice', 'proposal')),
+    assistant_prompt TEXT NOT NULL,
+    expected_user_response TEXT NOT NULL,
+    resume_graph TEXT NULL,
+    resume_node TEXT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ix_pending_interaction_state_user_updated
+ON pending_interaction_state (user_id, updated_at);
+```
+
+These tables are runtime continuity state. They are not event history and must not replace `user_events` or projections.
+
 ## 8. Evidence References
 
 ```sql

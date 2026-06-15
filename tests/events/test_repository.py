@@ -1,5 +1,5 @@
-from events.models import EventActor, MealLoggedPayload, UserEventEnvelope
-from events.repository import _event_to_row, _row_to_event
+from domain.events.models import EventActor, MealLoggedPayload, UserEventEnvelope
+from infrastructure.repositories.events import _event_to_row, _row_to_event
 
 
 def test_event_row_round_trip() -> None:

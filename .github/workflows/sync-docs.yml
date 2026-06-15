@@ -1,0 +1,37 @@
+name: Sync Repository Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "README.md"
+      - "docs/**"
+
+permissions:
+  contents: read
+
+jobs:
+  sync-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare payload
+        run: |
+          mkdir -p .docs-sync
+          cp README.md .docs-sync/README.md
+          cp -R docs .docs-sync/docs
+
+      - name: Push docs
+        uses: cpina/github-action-push-to-another-repository@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.SYNC_DOCS }}
+        with:
+          source-directory: ".docs-sync"
+          destination-github-username: "CarlosGebard"
+          destination-repository-name: "victus-docs"
+          target-directory: "repos/victus-agent"
+          target-branch: "main"
+          commit-message: "docs(sync): update victus-agent docs"
+          user-email: "github-actions[bot]@users.noreply.github.com"
+          user-name: "github-actions[bot]"

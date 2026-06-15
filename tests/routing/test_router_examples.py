@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from victus_routing.router import IntentRouter
+from application.routing.router import IntentRouter
 
 
 def test_direct_safety(router: IntentRouter) -> None:

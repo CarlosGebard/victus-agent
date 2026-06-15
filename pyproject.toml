@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
   "alembic>=1,<2",
   "langgraph>=1,<2",
+  "langgraph-cli[inmem]>=0.4,<1",
   "litellm>=1,<2",
   "psycopg[binary]>=3,<4",
   "pydantic>=2",
@@ -15,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 victus = "victus_cli:main"
+contracts = "ops.scripts.contracts:main"
 
 [project.optional-dependencies]
 embeddings = [
@@ -39,11 +41,8 @@ build-backend = "hatchling.build"
 packages = [
   "src/agent",
   "src/application",
-  "src/db",
-  "src/events",
+  "src/domain",
   "src/infrastructure",
-  "src/projections",
-  "src/tools",
   "src/victus_cli",
-  "src/victus_routing",
+  "ops",
 ]

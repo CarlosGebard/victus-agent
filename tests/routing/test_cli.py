@@ -1,5 +1,5 @@
-from victus_routing.cli import domain_percentages, format_domain_percentages
-from victus_routing.models import IntentScore, RouteDecision
+from application.routing.cli import domain_percentages, format_domain_percentages
+from application.routing.models import IntentScore, RouteDecision
 
 
 def _score(intent_type: str, route: str, score: float) -> IntentScore:

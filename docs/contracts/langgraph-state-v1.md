@@ -27,9 +27,26 @@ type VictusGraphStateV1 = {
     user_id: string
     raw_text: string
     normalized_text?: string
+    routing_query?: string
     received_at: string
     locale?: string
     timezone?: string
+    conversation_id?: string
+  }
+
+  session_context: {
+    conversation_id?: string
+    summary?: ConversationStateSummary
+    pending_interaction?: PendingInteractionState
+    bootstrap?: {
+      conversation_id?: string
+      summary?: ConversationStateSummary
+      pending_interaction?: PendingInteractionState
+      recent_user_messages: string[]
+      last_tool_summary?: string
+      routing_query: string
+    }
+    updated_summary?: ConversationStateSummary
   }
 
   safety: {
@@ -113,9 +130,11 @@ type VictusGraphStateV1 = {
 ## 3. Node Ownership
 
 - `SafetyPrecheckNode` writes `safety`.
+- `ContextBootstrapNode` writes `session_context.bootstrap` and `request.routing_query`.
 - `IntentRouterNode` writes `intent`.
 - Domain nodes write `tool_context`, `planning`, `evidence`, or `clarification`.
 - `ResponseComposer` writes `response`.
+- `SummaryAfterResponseNode` writes `session_context.updated_summary`.
 - Event-writing handlers append to `audit.events_emitted`.
 
 ## 4. Rules
@@ -126,3 +145,4 @@ type VictusGraphStateV1 = {
 - If safety status is `blocked`, no state-writing tool may execute.
 - If a node returns `needs_clarification`, route to `ClarificationNode`.
 - If a tool emits events, projectors must update before final response when the response depends on current state.
+- The graph must not load full conversation history by default when session context exists.

@@ -1,6 +1,6 @@
-from victus_routing.models import IntentScore, SafetyGateResult
-from victus_routing.policy import RoutingPolicy
-from victus_routing.prototype_store import RouterThresholds
+from application.routing.models import IntentScore, SafetyGateResult
+from application.routing.policy import RoutingPolicy
+from application.routing.prototype_store import RouterThresholds
 
 
 def _policy() -> RoutingPolicy:

@@ -93,7 +93,7 @@ This repository owns:
 - projection rebuild logic
 - planning session and artifact persistence
 - runtime traces and operational validation
-- development graph visualization under `dev/langgraph-viewer/`
+- local LangGraph visualization through `uv run victus graph-dev`
 
 This repository does not own:
 
