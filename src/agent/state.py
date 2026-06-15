@@ -16,13 +16,12 @@ from domain.session_context.models import BootstrapContext, ConversationStateSum
 class RequestState(TypedDict, total=False):
     request_id: str
     user_id: str
-    raw_text: str
-    normalized_text: str
+    original_text: str
+    working_text: str
     received_at: str
     locale: str
     timezone: str
     conversation_id: str
-    routing_query: str
 
 
 class SessionContextState(TypedDict, total=False):
@@ -33,9 +32,17 @@ class SessionContextState(TypedDict, total=False):
     updated_summary: ConversationStateSummary
 
 
-class SafetyState(TypedDict):
+class SafetyState(TypedDict, total=False):
     status: Literal["unknown", "ok", "warning", "blocked", "needs_clarification"]
     reasons: list[str]
+    decision: str
+    severity: str
+    categories: list[str]
+    matched_rules: list[str]
+    reason_codes: list[str]
+    blocked_tools: list[str]
+    allowed_next_route: str
+    audit_required: bool
 
 
 class IntentState(TypedDict, total=False):
@@ -97,6 +104,7 @@ class AuditState(TypedDict):
     events_emitted: list[ToolEventRef]
     warnings: list[str]
     errors: list[str]
+    transforms: list[dict[str, str]]
 
 
 class VictusGraphState(TypedDict, total=False):

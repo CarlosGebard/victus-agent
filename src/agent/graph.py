@@ -4,6 +4,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agent.nodes.context import context_bootstrap
 from agent.nodes.runtime import compose_response, normalize_request, route_intent, safety_precheck
+from agent.nodes.self_harm_response import self_harm_response
 from agent.nodes.summary import summarize_after_response
 from agent.state import VictusGraphState
 from application.config import load_runtime_config
@@ -24,8 +25,12 @@ def build_graph(
     runtime_config = load_runtime_config()
     graph_builder = StateGraph(VictusGraphState)
     graph_builder.add_node("normalize_request", normalize_request)
-    graph_builder.add_node("context_bootstrap", context_bootstrap(session_context_repository))
+    graph_builder.add_node(
+        "context_bootstrap",
+        context_bootstrap(session_context_repository, llm_client=llm_client),
+    )
     graph_builder.add_node("safety_precheck", safety_precheck)
+    graph_builder.add_node("self_harm_response", self_harm_response())
     graph_builder.add_node("route_intent", route_intent(router or build_default_router()))
     graph_builder.add_node(
         "compose_response",
@@ -39,11 +44,27 @@ def build_graph(
     graph_builder.add_edge(START, "normalize_request")
     graph_builder.add_edge("normalize_request", "context_bootstrap")
     graph_builder.add_edge("context_bootstrap", "safety_precheck")
-    graph_builder.add_edge("safety_precheck", "route_intent")
+    graph_builder.add_conditional_edges(
+        "safety_precheck",
+        _next_after_safety_precheck,
+        {
+            "self_harm_response": "self_harm_response",
+            "route_intent": "route_intent",
+        },
+    )
+    graph_builder.add_edge("self_harm_response", "summarize_after_response")
     graph_builder.add_edge("route_intent", "compose_response")
     graph_builder.add_edge("compose_response", "summarize_after_response")
     graph_builder.add_edge("summarize_after_response", END)
     return graph_builder.compile()
+
+
+def _next_after_safety_precheck(state: VictusGraphState) -> str:
+    safety = state.get("safety", {})
+    categories = set(safety.get("categories", []))
+    if "self_harm" in categories and safety.get("severity") in {"high", "critical"}:
+        return "self_harm_response"
+    return "route_intent"
 
 
 def build_default_router() -> IntentRouter:
@@ -58,4 +79,10 @@ def build_default_router() -> IntentRouter:
     )
 
 
-graph = build_graph()
+def _build_studio_graph():
+    from infrastructure.llm.factory import build_llm_client
+
+    return build_graph(llm_client=build_llm_client())
+
+
+graph = _build_studio_graph()

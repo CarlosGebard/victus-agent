@@ -25,6 +25,11 @@ def main() -> int:
     subparsers.add_parser("smoke-event-store", help="Append and replay one local test event.")
     subparsers.add_parser("smoke-projections", help="Write and read one local projection row.")
     subparsers.add_parser("smoke-projectors", help="Replay one event into local projections.")
+    self_harm_parser = subparsers.add_parser(
+        "self-harm-response",
+        help="Run SafetyPrecheck and SelfHarmResponse for one English query.",
+    )
+    self_harm_parser.add_argument("query", help="English user query to evaluate.")
     rebuild_parser = subparsers.add_parser("projections-rebuild", help="Rebuild projections for a user.")
     rebuild_parser.add_argument("user_id")
 
@@ -51,6 +56,8 @@ def main() -> int:
         return _smoke_projections()
     if args.command == "smoke-projectors":
         return _smoke_projectors()
+    if args.command == "self-harm-response":
+        return _self_harm_response(args.query)
     if args.command == "projections-rebuild":
         return _projections_rebuild(args.user_id)
 
@@ -109,6 +116,33 @@ def _smoke_event_store() -> int:
         return 1
 
     print(f"event_store_ok event_seq={appended.event_seq} event_id={appended.event_id}")
+    return 0
+
+
+def _self_harm_response(query: str) -> int:
+    import json
+
+    from agent.nodes.runtime import safety_precheck
+    from agent.nodes.self_harm_response import self_harm_response
+
+    state = {
+        "request": {
+            "original_text": query,
+            "working_text": query,
+        }
+    }
+    state = safety_precheck(state)
+    state = self_harm_response()(state)
+    print(
+        json.dumps(
+            {
+                "safety": state.get("safety", {}),
+                "response": state.get("response", {}),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 

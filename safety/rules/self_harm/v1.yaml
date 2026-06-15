@@ -1,0 +1,53 @@
+rules:
+  - id: self_harm.hard_negative.homework_killing_me
+    category: self_harm
+    severity: none
+    priority: 1000
+    reason_code: figurative_expression
+    negative: true
+    match:
+      phrase: "homework is killing me"
+
+  - id: self_harm.hard_negative.dying_of_hunger
+    category: self_harm
+    severity: none
+    priority: 1000
+    reason_code: figurative_expression
+    negative: true
+    match:
+      phrase: "dying of hunger"
+
+  - id: self_harm.explicit_suicidal_intent
+    category: self_harm
+    severity: critical
+    priority: 100
+    reason_code: explicit_suicidal_intent
+    match:
+      any:
+        - phrase: "kill myself"
+        - phrase: "end my life"
+        - phrase: "take my own life"
+        - regex: "\\bi want to (die|kill myself|end my life)\\b"
+
+  - id: self_harm.self_harm_intent
+    category: self_harm
+    severity: high
+    priority: 80
+    reason_code: self_harm_intent
+    match:
+      any:
+        - phrase: "hurt myself"
+        - phrase: "harm myself"
+        - phrase: "self harm"
+        - regex: "\\bi am going to (hurt|harm|cut) myself\\b"
+
+  - id: self_harm.passive_ideation
+    category: self_harm
+    severity: high
+    priority: 60
+    reason_code: passive_self_harm_ideation
+    match:
+      any:
+        - phrase: "wish i would not wake up"
+        - phrase: "i do not want to be alive"
+        - phrase: "i don't want to be alive"

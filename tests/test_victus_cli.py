@@ -80,6 +80,20 @@ def test_cli_projection_rebuild_uses_direct_handler(monkeypatch: pytest.MonkeyPa
     assert calls == ["user-1"]
 
 
+def test_cli_self_harm_response_prints_json(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["victus", "self-harm-response", "I am going to hurt myself"],
+    )
+
+    assert cli_main() == 0
+
+    output = capsys.readouterr().out
+    assert '"decision": "route_to_safety_triage"' in output
+    assert '"mode": "safety_triage"' in output
+
+
 class CompletedProcess:
     def __init__(self, returncode: int) -> None:
         self.returncode = returncode

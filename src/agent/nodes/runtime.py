@@ -1,34 +1,58 @@
 from __future__ import annotations
 
 from agent.state import VictusGraphState
+from agent.prompts.compose_response import (
+    COMPOSE_RESPONSE_SYSTEM_PROMPT,
+    compose_response_user_prompt,
+)
 from application.ports.llm import LLMClient, LLMRequest
 from application.routing.normalizer import normalize_text
 from application.routing.router import IntentRouter
-from application.routing.safety_gate import SafetyGate
+from safety.engine.safety_precheck import SafetyPrecheck
+from safety.engine.schemas import SafetyPrecheckInput
 
 
 def normalize_request(state: VictusGraphState) -> VictusGraphState:
     request = dict(state.get("request", {}))
-    raw_text = request.get("raw_text", "")
-    request["normalized_text"] = normalize_text(raw_text)
-    return _merge(state, request=request, node_name="normalize_request")
+    original_text = str(request.get("original_text") or request.get("raw_text", ""))
+    existing_working_text = str(request.get("working_text") or "")
+    normalized_text = existing_working_text or normalize_text(original_text)
+    request = _clean_request(request)
+    request["original_text"] = original_text
+    request["working_text"] = normalized_text
+    return _merge(
+        state,
+        request=request,
+        node_name="normalize_request",
+        transform={"step": "normalize", "input": original_text, "output": normalized_text},
+    )
 
 
 def safety_precheck(state: VictusGraphState) -> VictusGraphState:
     request = state.get("request", {})
-    normalized_text = request.get("normalized_text") or normalize_text(request.get("raw_text", ""))
-    result = SafetyGate().check(normalized_text)
-    status = "ok"
-    if result.severity in {"high", "urgent"}:
-        status = "blocked"
-    elif result.severity == "medium":
-        status = "warning"
+    session_context = state.get("session_context", {})
+    result = SafetyPrecheck().check(
+        SafetyPrecheckInput(
+            original_text=str(request.get("original_text", "")),
+            working_text=str(request.get("working_text", "")),
+            session_summary=session_context.get("summary"),
+        )
+    )
+    status = "ok" if result.decision == "allow" else "blocked"
 
     return _merge(
         state,
         safety={
             "status": status,
-            "reasons": [result.reason] if result.reason else [],
+            "reasons": result.reason_codes,
+            "decision": result.decision,
+            "severity": result.severity,
+            "categories": result.categories,
+            "matched_rules": result.matched_rules,
+            "reason_codes": result.reason_codes,
+            "blocked_tools": result.blocked_tools,
+            "allowed_next_route": result.allowed_next_route,
+            "audit_required": result.audit_required,
         },
         node_name="safety_precheck",
     )
@@ -36,8 +60,20 @@ def safety_precheck(state: VictusGraphState) -> VictusGraphState:
 
 def route_intent(router: IntentRouter):
     def node(state: VictusGraphState) -> VictusGraphState:
+        safety = state.get("safety", {})
+        allowed_next_route = safety.get("allowed_next_route")
+        if allowed_next_route in {"SafetyTriageRoute", "EmergencySupportResponse"}:
+            intent = {
+                "primary_intent": "risk_medical_unsafe",
+                "confidence": 1.0,
+                "target_node": allowed_next_route,
+                "subintents": list(safety.get("categories", [])),
+                "rationale": safety.get("decision", "safety"),
+            }
+            return _merge(state, intent=intent, node_name="route_intent")
+
         request = state.get("request", {})
-        text = request.get("routing_query") or request.get("raw_text", "")
+        text = str(request.get("working_text") or request.get("original_text", ""))
         decision = router.route(text)
         intent = {
             "primary_intent": decision.intent_type or decision.decision,
@@ -84,14 +120,13 @@ def compose_response(*, llm_client: LLMClient | None = None, model: str | None =
                 messages=[
                     {
                         "role": "system",
-                        "content": "You compose concise, safe Victus runtime responses.",
+                        "content": COMPOSE_RESPONSE_SYSTEM_PROMPT,
                     },
                     {
                         "role": "user",
-                        "content": (
-                            "Route: "
-                            f"{intent.get('target_node', 'unknown')}\n"
-                            f"Input: {request.get('raw_text', '')}"
+                        "content": compose_response_user_prompt(
+                            route=str(intent.get("target_node", "unknown")),
+                            raw_text=str(request.get("original_text", "")),
                         ),
                     },
                 ],
@@ -144,11 +179,26 @@ def _blocked_response(reasons: list[str]) -> dict[str, object]:
     }
 
 
-def _merge(state: VictusGraphState, *, node_name: str, **updates: object) -> VictusGraphState:
+def _clean_request(request: dict[str, object]) -> dict[str, object]:
+    for key in ("raw_text", "normalized_text", "english_safety_text", "routing_query"):
+        request.pop(key, None)
+    return request
+
+
+def _merge(
+    state: VictusGraphState,
+    *,
+    node_name: str,
+    transform: dict[str, str] | None = None,
+    **updates: object,
+) -> VictusGraphState:
     audit = dict(state.get("audit", {}))
     audit.setdefault("node_path", [])
     audit.setdefault("events_emitted", [])
     audit.setdefault("warnings", [])
     audit.setdefault("errors", [])
+    audit.setdefault("transforms", [])
     audit["node_path"] = [*audit["node_path"], node_name]
+    if transform:
+        audit["transforms"] = [*audit["transforms"], transform]
     return {**state, **updates, "audit": audit}

@@ -25,9 +25,8 @@ type VictusGraphStateV1 = {
   request: {
     request_id: string
     user_id: string
-    raw_text: string
-    normalized_text?: string
-    routing_query?: string
+    original_text: string
+    working_text: string
     received_at: string
     locale?: string
     timezone?: string
@@ -51,8 +50,15 @@ type VictusGraphStateV1 = {
 
   safety: {
     status: "unknown" | "ok" | "warning" | "blocked" | "needs_clarification"
-    risk_category?: string
     reasons: string[]
+    decision?: "allow" | "route_to_safety_triage" | "emergency_escalation"
+    severity?: "none" | "low" | "medium" | "high" | "critical"
+    categories?: string[]
+    matched_rules?: string[]
+    reason_codes?: string[]
+    blocked_tools?: string[]
+    allowed_next_route?: "IntentRouter" | "SafetyTriageRoute" | "EmergencySupportResponse"
+    audit_required?: boolean
   }
 
   intent: {
@@ -123,6 +129,11 @@ type VictusGraphStateV1 = {
     events_emitted: Array<{ event_id: string; event_type: string; seq: number }>
     warnings: string[]
     errors: string[]
+    transforms?: Array<{
+      step: string
+      input: string
+      output: string
+    }>
   }
 }
 ```
@@ -130,7 +141,7 @@ type VictusGraphStateV1 = {
 ## 3. Node Ownership
 
 - `SafetyPrecheckNode` writes `safety`.
-- `ContextBootstrapNode` writes `session_context.bootstrap` and `request.routing_query`.
+- `ContextBootstrapNode` writes `session_context.bootstrap` and updates `request.working_text` only when pending context or translation changes the active view.
 - `IntentRouterNode` writes `intent`.
 - Domain nodes write `tool_context`, `planning`, `evidence`, or `clarification`.
 - `ResponseComposer` writes `response`.

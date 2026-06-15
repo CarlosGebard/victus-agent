@@ -15,13 +15,7 @@ class LiteLLMClient:
         return self._to_response(raw)
 
     async def acomplete(self, request: LLMRequest) -> LLMResponse:
-        import litellm
-
-        try:
-            raw = await litellm.acompletion(**self._kwargs(request))
-            return self._to_response(raw)
-        except AttributeError:
-            return await asyncio.to_thread(self.complete, request)
+        return await asyncio.to_thread(self.complete, request)
 
     def _kwargs(self, request: LLMRequest) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
@@ -30,10 +24,19 @@ class LiteLLMClient:
             "metadata": {"operation": request.operation, **request.metadata},
         }
 
-        if api_base := os.getenv("LITELLM_PROXY_API_BASE"):
+        is_direct_groq_model = request.model.startswith("groq/")
+
+        if not is_direct_groq_model and (api_base := os.getenv("LITELLM_PROXY_API_BASE")):
             kwargs["api_base"] = api_base.rstrip("/")
 
-        if api_key := os.getenv("LITELLM_PROXY_API_KEY") or os.getenv("LITELLM_KEY"):
+        api_key = (
+            os.getenv("GROQ_API_KEY")
+            if is_direct_groq_model
+            else os.getenv("LITELLM_PROXY_API_KEY")
+            or os.getenv("LITELLM_KEY")
+            or os.getenv("GROQ_API_KEY")
+        )
+        if api_key:
             kwargs["api_key"] = api_key
 
         if request.temperature is not None:

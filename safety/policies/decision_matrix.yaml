@@ -1,0 +1,17 @@
+default:
+  decision: allow
+  allowed_next_route: IntentRouter
+  audit_required: false
+
+rules:
+  - category: self_harm
+    severity: critical
+    decision: emergency_escalation
+    allowed_next_route: EmergencySupportResponse
+    audit_required: true
+
+  - category: self_harm
+    severity: high
+    decision: route_to_safety_triage
+    allowed_next_route: SafetyTriageRoute
+    audit_required: true

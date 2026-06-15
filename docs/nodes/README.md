@@ -4,7 +4,7 @@
 
 ### 1. `normalize_request`
 
-Qué hace: toma `request.raw_text`, lo normaliza con `normalize_text()` y escribe `request.normalized_text`.
+Qué hace: toma `request.original_text` o compat `request.raw_text`, lo normaliza y escribe una sola vista activa: `request.working_text`.
 
 Dónde está:
 - Nodo: `src/agent/nodes/runtime.py`
@@ -12,7 +12,7 @@ Dónde está:
 
 ### 2. `context_bootstrap`
 
-Qué hace: carga `ConversationStateSummary` y `PendingInteractionState` si hay `conversation_id`, y construye `request.routing_query`.
+Qué hace: carga `ConversationStateSummary` y `PendingInteractionState` si hay `conversation_id`, y actualiza `request.working_text` si necesita contexto pendiente o traducción.
 
 Dónde está:
 - Nodo: `src/agent/nodes/context.py`
@@ -21,7 +21,7 @@ Dónde está:
 
 ### 3. `safety_precheck`
 
-Qué hace: revisa el texto normalizado con `SafetyGate` y escribe `safety.status` y `safety.reasons`.
+Qué hace: revisa el texto de seguridad en inglés con reglas declarativas y escribe `safety.decision`, `safety.severity`, `safety.matched_rules` y `safety.reason_codes`.
 
 Dónde está:
 - Nodo: `src/agent/nodes/runtime.py`
@@ -30,7 +30,7 @@ Dónde está:
 
 ### 4. `route_intent`
 
-Qué hace: enruta `request.routing_query` hacia un graph/route semántico y escribe `intent`.
+Qué hace: enruta `request.working_text` hacia un graph/route semántico y escribe `intent`.
 
 Dónde está:
 - Nodo: `src/agent/nodes/runtime.py`

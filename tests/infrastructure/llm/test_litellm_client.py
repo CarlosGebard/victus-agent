@@ -38,6 +38,43 @@ def test_litellm_client_builds_kwargs_from_request_and_env(monkeypatch: pytest.M
     }
 
 
+def test_litellm_client_uses_groq_api_key_when_proxy_key_is_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LITELLM_PROXY_API_KEY", raising=False)
+    monkeypatch.delenv("LITELLM_KEY", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "groq-key")
+
+    kwargs = LiteLLMClient()._kwargs(
+        LLMRequest(
+            operation="unit.test",
+            model="groq/llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": "hello"}],
+        )
+    )
+
+    assert kwargs["api_key"] == "groq-key"
+
+
+def test_litellm_client_uses_direct_groq_config_for_groq_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LITELLM_PROXY_API_BASE", "https://litellm.internal/")
+    monkeypatch.setenv("LITELLM_PROXY_API_KEY", "proxy-key")
+    monkeypatch.setenv("GROQ_API_KEY", "groq-key")
+
+    kwargs = LiteLLMClient()._kwargs(
+        LLMRequest(
+            operation="unit.test",
+            model="groq/llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": "hello"}],
+        )
+    )
+
+    assert kwargs["api_key"] == "groq-key"
+    assert "api_base" not in kwargs
+
+
 def test_litellm_client_maps_completion_response(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

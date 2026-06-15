@@ -102,9 +102,18 @@ uv run victus smoke-event-store
 uv run victus smoke-projections
 uv run victus smoke-projectors
 uv run victus projections-rebuild local-smoke-user
+uv run victus self-harm-response "I am going to hurt myself"
 uv run contracts list
 uv run contracts sync
 uv run contracts validate
+```
+
+Optional governed safety eval flow:
+
+```bash
+uv run python -m safety.datasets.load_aegis --split train
+uv run python -m safety.datasets.normalize_aegis
+uv run python -m safety.evals.eval_aegis_self_harm
 ```
 
 Local PostgreSQL can be started with:
@@ -135,6 +144,8 @@ LLM_PROVIDER=...
 LLM_MODEL=...
 LITELLM_PROXY_API_BASE=https://...
 LITELLM_PROXY_API_KEY=...
+GROQ_API_KEY=...
+GROQ_TRANSLATION_MODEL=groq/llama-3.1-8b-instant
 LANGSMITH_API_KEY=...
 ```
 
@@ -160,6 +171,7 @@ LITELLM_KEY=...
 - Auth configuration must be validated at startup outside local mode.
 - Production must not run with `FOOD_DATA_PROVIDER=stub` unless explicitly allowed by a feature flag.
 - LiteLLM proxy credentials must come from environment variables and must not be committed, printed, or stored in runtime traces.
+- `context_bootstrap` uses Groq through LiteLLM for normalized-text translation when an LLM client is configured.
 - `LANGSMITH_API_KEY` is required for LangGraph Studio graph visualization, not for the core local runtime.
 
 ## 4.1 Documentation Sync

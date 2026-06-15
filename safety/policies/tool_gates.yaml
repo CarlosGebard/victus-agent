@@ -1,0 +1,19 @@
+default:
+  blocked_tools: []
+
+rules:
+  - category: self_harm
+    severity: critical
+    blocked_tools:
+      - planning
+      - diet
+      - profile-write
+      - external-write
+
+  - category: self_harm
+    severity: high
+    blocked_tools:
+      - planning
+      - diet
+      - profile-write
+      - external-write

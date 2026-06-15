@@ -38,7 +38,8 @@ Owned by `victus-agent-runtime`.
 ```ts
 type SafetyPrecheckInput = {
   user_id: string
-  normalized_text: string
+  original_text: string
+  working_text: string
   selected_intent?: string
   user_context_digest?: string
   active_constraints?: object
@@ -49,20 +50,14 @@ type SafetyPrecheckInput = {
 
 ```ts
 type SafetyPrecheckOutput = {
-  safety_status: "ok" | "warning" | "blocked" | "needs_clarification"
-  risk_category?:
-    | "medical_symptom"
-    | "extreme_deficit"
-    | "eating_risk"
-    | "allergy_or_restriction"
-    | "unsafe_training"
-    | "unknown"
-
-  reason?: string
-  next_node:
-    | "continue"
-    | "safety_triage"
-    | "clarification"
+  decision: "allow" | "route_to_safety_triage" | "emergency_escalation"
+  severity: "none" | "low" | "medium" | "high" | "critical"
+  categories: Array<"self_harm" | "none">
+  matched_rules: string[]
+  reason_codes: string[]
+  blocked_tools: string[]
+  allowed_next_route: "IntentRouter" | "SafetyTriageRoute" | "EmergencySupportResponse"
+  audit_required: boolean
 }
 ```
 
@@ -70,13 +65,13 @@ type SafetyPrecheckOutput = {
 
 ### Required Responsibilities
 
-- Detect high-risk requests before tool execution.
+- Detect V1 self-harm requests before tool execution using declarative rules.
     
 - Block unsafe actions when policy requires it.
     
 - Route uncertain safety cases to clarification.
     
-- Preserve safety reasons for traceability.
+- Preserve matched rule IDs and reason codes for traceability.
     
 - Trigger safety-related events only through internal handlers.
     

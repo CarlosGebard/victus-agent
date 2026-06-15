@@ -103,6 +103,7 @@ src/domain/           -> domain contracts, event models, projections, tools, ses
 src/infrastructure/   -> database schema/engine, repositories, and provider adapters
 src/victus_cli/       -> local operational CLI
 config/               -> route config, safety config, environment defaults
+safety/               -> declarative safety rules, policies, offline datasets, and eval utilities
 ops/                  -> operational helper scripts
 tests/                -> unit, integration, contract, and smoke tests
 ```

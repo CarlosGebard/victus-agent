@@ -23,8 +23,8 @@ This node prevents Victus from relying on full conversation history as the defau
 ```ts
 type ContextBootstrapInput = {
   request: {
-    raw_text: string
-    normalized_text?: string
+    original_text: string
+    working_text: string
     user_id?: string
     conversation_id?: string
   }
@@ -41,7 +41,7 @@ Optional repository reads:
 ```ts
 type ContextBootstrapOutput = {
   request: {
-    routing_query: string
+    working_text: string
   }
   session_context: {
     conversation_id?: string
