@@ -25,6 +25,11 @@ embeddings = [
 test = [
   "pytest>=8",
 ]
+safety-local = [
+  "accelerate>=1",
+  "torch>=2",
+  "transformers>=5",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

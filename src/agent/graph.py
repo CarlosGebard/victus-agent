@@ -26,10 +26,13 @@ def build_graph(
     graph_builder = StateGraph(VictusGraphState)
     graph_builder.add_node("normalize_request", normalize_request)
     graph_builder.add_node(
+        "safety_precheck",
+        safety_precheck(llm_client=llm_client, model=runtime_config.safety.model),
+    )
+    graph_builder.add_node(
         "context_bootstrap",
         context_bootstrap(session_context_repository, llm_client=llm_client),
     )
-    graph_builder.add_node("safety_precheck", safety_precheck)
     graph_builder.add_node("self_harm_response", self_harm_response())
     graph_builder.add_node("route_intent", route_intent(router or build_default_router()))
     graph_builder.add_node(
@@ -41,11 +44,11 @@ def build_graph(
         summarize_after_response(session_context_repository),
     )
 
-    graph_builder.add_edge(START, "normalize_request")
+    graph_builder.add_edge(START, "safety_precheck")
+    graph_builder.add_edge("safety_precheck", "normalize_request")
     graph_builder.add_edge("normalize_request", "context_bootstrap")
-    graph_builder.add_edge("context_bootstrap", "safety_precheck")
     graph_builder.add_conditional_edges(
-        "safety_precheck",
+        "context_bootstrap",
         _next_after_safety_precheck,
         {
             "self_harm_response": "self_harm_response",

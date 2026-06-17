@@ -1,0 +1,126 @@
+events:
+  - event_type: restriction.added
+    aggregate_type: restriction
+    owner_node: profile_update
+    payload_schema_version: 1
+    projectors:
+      - profile_projector
+      - constraint_projector
+
+  - event_type: restriction.updated
+    aggregate_type: restriction
+    owner_node: profile_update
+    payload_schema_version: 1
+    projectors:
+      - profile_projector
+      - constraint_projector
+
+  - event_type: preference.updated
+    aggregate_type: preference
+    owner_node: profile_update
+    payload_schema_version: 1
+    projectors:
+      - profile_projector
+      - constraint_projector
+
+  - event_type: meal.logged
+    aggregate_type: meal
+    owner_node: event_capture
+    payload_schema_version: 1
+    projectors:
+      - nutrition_status_projector
+
+  - event_type: meal.edited
+    aggregate_type: meal
+    owner_node: event_capture
+    payload_schema_version: 1
+    projectors:
+      - nutrition_status_projector
+
+  - event_type: meal.deleted
+    aggregate_type: meal
+    owner_node: event_capture
+    payload_schema_version: 1
+    projectors:
+      - nutrition_status_projector
+
+  - event_type: biometrics.logged
+    aggregate_type: biometrics
+    owner_node: event_capture
+    payload_schema_version: 1
+    projectors:
+      - nutrition_status_projector
+
+  - event_type: symptom.logged
+    aggregate_type: symptom
+    owner_node: event_capture
+    payload_schema_version: 1
+    projectors:
+      - nutrition_status_projector
+
+  - event_type: goal.set
+    aggregate_type: goal
+    owner_node: plan_intent
+    payload_schema_version: 1
+    projectors:
+      - profile_projector
+      - planning_history_projector
+
+  - event_type: goal.adjusted
+    aggregate_type: goal
+    owner_node: plan_intent
+    payload_schema_version: 1
+    projectors:
+      - profile_projector
+      - planning_history_projector
+
+  - event_type: plan.session_started
+    aggregate_type: plan_session
+    owner_node: plan_intent
+    payload_schema_version: 1
+    projectors:
+      - planning_history_projector
+
+  - event_type: plan.revision_created
+    aggregate_type: plan_revision
+    owner_node: plan_intent
+    payload_schema_version: 1
+    projectors:
+      - planning_history_projector
+
+  - event_type: plan.artifact_saved
+    aggregate_type: plan_artifact
+    owner_node: plan_intent
+    payload_schema_version: 1
+    projectors:
+      - planning_history_projector
+
+  - event_type: claim.generated
+    aggregate_type: claim
+    owner_node: evidence_answer
+    payload_schema_version: 1
+    projectors: []
+
+  - event_type: evidence.cited
+    aggregate_type: evidence_citation
+    owner_node: evidence_answer
+    payload_schema_version: 1
+    projectors: []
+
+  - event_type: clarification.requested
+    aggregate_type: interaction
+    owner_node: clarification
+    payload_schema_version: 1
+    projectors: []
+
+  - event_type: confirmation.requested
+    aggregate_type: interaction
+    owner_node: clarification
+    payload_schema_version: 1
+    projectors: []
+
+  - event_type: confirmation.resolved
+    aggregate_type: interaction
+    owner_node: clarification
+    payload_schema_version: 1
+    projectors: []

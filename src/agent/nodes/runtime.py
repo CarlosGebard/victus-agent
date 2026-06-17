@@ -8,8 +8,6 @@ from agent.prompts.compose_response import (
 from application.ports.llm import LLMClient, LLMRequest
 from application.routing.normalizer import normalize_text
 from application.routing.router import IntentRouter
-from safety.engine.safety_precheck import SafetyPrecheck
-from safety.engine.schemas import SafetyPrecheckInput
 
 
 def normalize_request(state: VictusGraphState) -> VictusGraphState:
@@ -28,34 +26,79 @@ def normalize_request(state: VictusGraphState) -> VictusGraphState:
     )
 
 
-def safety_precheck(state: VictusGraphState) -> VictusGraphState:
-    request = state.get("request", {})
-    session_context = state.get("session_context", {})
-    result = SafetyPrecheck().check(
-        SafetyPrecheckInput(
-            original_text=str(request.get("original_text", "")),
-            working_text=str(request.get("working_text", "")),
-            session_summary=session_context.get("summary"),
+def safety_precheck(*, llm_client: LLMClient | None = None, model: str | None = None):
+    def node(state: VictusGraphState) -> VictusGraphState:
+        request = state.get("request", {})
+        text = str(
+            request.get("working_text")
+            or request.get("original_text")
+            or request.get("raw_text")
+            or ""
         )
-    )
-    status = "ok" if result.decision == "allow" else "blocked"
+        if not llm_client or not model:
+            return _merge(state, safety=_allowed_safety(), node_name="safety_precheck")
 
-    return _merge(
-        state,
-        safety={
-            "status": status,
-            "reasons": result.reason_codes,
-            "decision": result.decision,
-            "severity": result.severity,
-            "categories": result.categories,
-            "matched_rules": result.matched_rules,
-            "reason_codes": result.reason_codes,
-            "blocked_tools": result.blocked_tools,
-            "allowed_next_route": result.allowed_next_route,
-            "audit_required": result.audit_required,
-        },
-        node_name="safety_precheck",
+        result = llm_client.complete(
+            LLMRequest(
+                operation="agent.safety_precheck.llama_guard",
+                model=model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": _llama_guard_prompt(text),
+                    }
+                ],
+                temperature=0,
+                max_tokens=32,
+                metadata={"guard": "llama_guard_3_1b"},
+            )
+        )
+        safety = _safety_from_llama_guard(result.text)
+        return _merge(state, safety=safety, node_name="safety_precheck")
+
+    return node
+
+
+def _llama_guard_prompt(user_text: str) -> str:
+    return (
+        "Task: Check if the user message is safe or unsafe. "
+        "Respond only with 'safe' or 'unsafe' followed by the violated category if any.\n\n"
+        f"User message:\n{user_text}"
     )
+
+
+def _safety_from_llama_guard(output: str) -> dict[str, object]:
+    normalized = output.strip().lower()
+    if normalized.startswith("unsafe"):
+        categories = ["self_harm"] if "s11" in normalized or "self-harm" in normalized else ["unsafe"]
+        return {
+            "status": "blocked",
+            "reasons": ["llama_guard_unsafe"],
+            "decision": "route_to_safety_triage",
+            "severity": "high",
+            "categories": categories,
+            "matched_rules": [],
+            "reason_codes": ["llama_guard_unsafe"],
+            "blocked_tools": ["planning", "event_capture", "profile_update"],
+            "allowed_next_route": "SafetyTriageRoute",
+            "audit_required": True,
+        }
+    return _allowed_safety()
+
+
+def _allowed_safety() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "reasons": [],
+        "decision": "allow",
+        "severity": "none",
+        "categories": ["none"],
+        "matched_rules": [],
+        "reason_codes": [],
+        "blocked_tools": [],
+        "allowed_next_route": "IntentRouter",
+        "audit_required": False,
+    }
 
 
 def route_intent(router: IntentRouter):

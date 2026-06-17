@@ -1,138 +1,48 @@
 # Victus Nodes Map
 
-## Nodos Implementados
+Los contratos de nodos se agrupan por responsabilidad. La distincion principal es si el nodo
+puede conducir a herramientas/acciones de dominio o si solo prepara, enruta o cierra el turno.
 
-### 1. `normalize_request`
+## `runtime/`
 
-Qué hace: toma `request.original_text` o compat `request.raw_text`, lo normaliza y escribe una sola vista activa: `request.working_text`.
+Nodos de orquestacion. No ofrecen herramientas de dominio al modelo.
 
-Dónde está:
-- Nodo: `src/agent/nodes/runtime.py`
-- Conectado en grafo: `src/agent/graph.py`
+- [`context_bootstrap`](runtime/context-bootstrap-node.md): carga contexto compacto y pendiente.
+- [`safety_precheck`](runtime/safety-precheck-node.md): evalua riesgo antes de la ejecucion normal.
+- [`route_intent`](runtime/intent-router-node.md): decide el branch semantico objetivo.
+- [`summary_after_response`](runtime/summary-after-response-node.md): resume el turno despues de responder.
 
-### 2. `context_bootstrap`
+Nodos runtime implementados sin contrato dedicado todavia:
 
-Qué hace: carga `ConversationStateSummary` y `PendingInteractionState` si hay `conversation_id`, y actualiza `request.working_text` si necesita contexto pendiente o traducción.
+- `normalize_request`: normaliza `request.raw_text`/`request.original_text` a `request.working_text`.
+- `compose_response`: compone la respuesta final, con LLM si hay cliente configurado.
 
-Dónde está:
-- Nodo: `src/agent/nodes/context.py`
-- Contrato: `docs/nodes/context-bootstrap-node.md`
-- Conectado en grafo: `src/agent/graph.py`
+## `tool-nodes/`
 
-### 3. `safety_precheck`
+Nodos o branches que representan capacidades que eventualmente ofrecen herramientas, acciones o
+acceso a servicios de dominio al modelo. Deben pasar por safety, routing y tool gates antes de
+mutar estado o consultar evidencia.
 
-Qué hace: revisa el texto de seguridad en inglés con reglas declarativas y escribe `safety.decision`, `safety.severity`, `safety.matched_rules` y `safety.reason_codes`.
+- [`event_capture`](tool-nodes/event-capture-node.md): captura eventos de usuario como comidas,
+  biometria o sintomas.
+- [`profile_update`](tool-nodes/profile-update-node.md): actualiza preferencias, restricciones y
+  datos persistentes de perfil.
+- [`plan_intent`](tool-nodes/plan-intent-node.md): gestiona objetivos, planes, revisiones y
+  artefactos de planificacion.
+- [`evidence_answer`](tool-nodes/evidence-answer-node.md): usa evidencia/RAG para responder o
+  respaldar recomendaciones.
 
-Dónde está:
-- Nodo: `src/agent/nodes/runtime.py`
-- Contrato: `docs/nodes/safety-precheck-node.md`
-- Conectado en grafo: `src/agent/graph.py`
+## `interaction/`
 
-### 4. `route_intent`
+Nodos conversacionales auxiliares. No ejecutan herramientas de dominio por si mismos.
 
-Qué hace: enruta `request.working_text` hacia un graph/route semántico y escribe `intent`.
-
-Dónde está:
-- Nodo: `src/agent/nodes/runtime.py`
-- Router: `src/application/routing/`
-- Contrato: `docs/nodes/intent-router-node.md`
-- Conectado en grafo: `src/agent/graph.py`
-
-### 5. `compose_response`
-
-Qué hace: genera la respuesta final; si hay `LLMClient`, usa el puerto LLM, si no responde de forma determinística.
-
-Dónde está:
-- Nodo: `src/agent/nodes/runtime.py`
-- Puerto LLM: `src/application/ports/llm.py`
-- Conectado en grafo: `src/agent/graph.py`
-
-### 6. `summarize_after_response`
-
-Qué hace: actualiza `ConversationStateSummary` después de la respuesta y persiste/limpia `PendingInteractionState`.
-
-Dónde está:
-- Nodo: `src/agent/nodes/summary.py`
-- Contrato: `docs/nodes/summary-after-response-node.md`
-- Conectado en grafo: `src/agent/graph.py`
+- [`clarification`](interaction/clarification-node.md): pide informacion minima para desbloquear
+  una accion o ruta.
 
 ## Nodos Faltantes
 
-### 1. `semantic_canonicalizer`
-
-Qué haría: convertiría mensajes cortos o ambiguos en una consulta autónoma para routing usando contexto bootstrap.
-
-Dónde debería vivir:
-- Nodo: `src/agent/nodes/context.py` o `src/agent/nodes/canonicalizer.py`
-- Servicio: `src/application/routing/`
-
-### 2. `projection_load`
-
-Qué haría: cargaría proyecciones mínimas del usuario antes de ejecutar un branch o tool.
-
-Dónde debería vivir:
-- Nodo: `src/agent/nodes/projections.py`
-- Repositorio: `src/infrastructure/repositories/projections.py`
-
-### 3. `tool_dispatch`
-
-Qué haría: elegiría y ejecutaría el handler permitido para el route seleccionado.
-
-Dónde debería vivir:
-- Nodo: `src/agent/nodes/tools.py`
-- Contratos: `src/domain/tools/`
-
-### 4. `event_capture`
-
-Qué haría: ejecutaría capturas como `meal.logged`, `biometrics.logged` o `symptom.logged`.
-
-Dónde debería vivir:
-- Nodo/branch: `src/agent/nodes/event_capture.py`
-- Contrato: `docs/nodes/event-capture-node.md`
-
-### 5. `projector_update`
-
-Qué haría: correría projectors afectados por eventos emitidos y actualizaría proyecciones.
-
-Dónde debería vivir:
-- Nodo: `src/agent/nodes/projectors.py`
-- Servicio: `src/application/projections/runner.py`
-
-### 6. `profile_update`
-
-Qué haría: actualizaría restricciones, preferencias y contexto durable del usuario.
-
-Dónde debería vivir:
-- Nodo/branch: `src/agent/nodes/profile_update.py`
-- Contrato: `docs/nodes/profile-update-node.md`
-
-### 7. `plan_intent`
-
-Qué haría: manejaría creación/revisión de objetivos, sesiones, revisiones y artifacts de planificación.
-
-Dónde debería vivir:
-- Nodo/branch: `src/agent/nodes/plan_intent.py`
-- Contrato: `docs/nodes/plan-intent-node.md`
-
-### 8. `evidence_answer`
-
-Qué haría: respondería preguntas de evidencia sin mutar estado de usuario por defecto.
-
-Dónde debería vivir:
-- Nodo/branch: `src/agent/nodes/evidence_answer.py`
-- Contrato: `docs/nodes/evidence-answer-node.md`
-
-### 9. `clarification`
-
-Qué haría: pediría la mínima información necesaria y dejaría estado resumible.
-
-Dónde debería vivir:
-- Nodo/branch: `src/agent/nodes/clarification.py`
-- Contrato: `docs/nodes/clarification-node.md`
-
-### 10. `mixed_intent_resolver`
-
-Qué haría: separaría o secuenciaría solicitudes con múltiples intenciones.
-
-Dónde debería vivir:
-- Nodo/branch: `src/agent/nodes/mixed_intent.py`
+- `semantic_canonicalizer`: convertiria mensajes cortos o ambiguos en una consulta autonoma.
+- `projection_load`: cargaria proyecciones minimas antes de un branch/tool.
+- `tool_dispatch`: elegiria y ejecutaria el handler permitido para el route seleccionado.
+- `projector_update`: correria projectors afectados por eventos emitidos.
+- `mixed_intent_resolver`: separaria o secuenciaria solicitudes con multiples intenciones.

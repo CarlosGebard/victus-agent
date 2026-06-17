@@ -22,7 +22,7 @@ V1 domain is nutrition and lifestyle support. Workout programming is out of scop
 
 The runtime combines:
 
-- authenticated account context
+- authenticated agent user context
 - LangGraph orchestration
 - safety-first routing
 - embedding-assisted multilingual intent classification
@@ -32,7 +32,7 @@ The runtime combines:
 - planning artifact persistence
 - evidence adapter boundaries
 
-The LLM is a reasoning component inside the runtime. It is not the owner of account identity, persisted state, tool side effects, or safety decisions.
+The LLM is a reasoning component inside the runtime. It is not the owner of agent identity, persisted state, tool side effects, or safety decisions.
 
 The application layer accesses model providers only through the internal `LLMClient`
 port. Provider-specific LiteLLM code belongs in `src/infrastructure/llm/` and must
@@ -85,27 +85,24 @@ Outputs:
 
 Boundary:
 
-- must not trust user-provided account identifiers
+- must not trust user-provided identity identifiers
 - must not execute tool side effects directly
 - must pass all mutations through the agent runtime
 
 ### 2.2 Account Context Resolver
 
-Responsibility: map authentication claims to internal `account_id` and active `user_id`.
+Responsibility: map trusted caller identity to the agent-local `agent_user_id`.
 
 Inputs:
 
-- auth provider
-- auth subject
+- external system
+- external subject
 - validated token claims
-- optional selected user profile id
 
 Outputs:
 
 - `AuthContext`
-- `account_id`
-- `user_id`
-- roles
+- `agent_user_id`
 - locale and timezone defaults
 
 Boundary:
@@ -351,7 +348,7 @@ Responsibility: provide a stable interface to evidence search and evidence suppo
 Boundary:
 
 - evidence may support explanations and recommendations
-- evidence must not override safety, account identity, user restrictions, or hard constraints
+- evidence must not override safety, agent identity, user restrictions, or hard constraints
 - V1 may use a stub or simple adapter until the evidence RAG matures
 
 ### 2.12 Observability Layer
@@ -368,7 +365,7 @@ Boundary:
 ### Internal Boundaries
 
 ```text
-Auth resolution       -> account identity only
+Auth resolution       -> agent identity only
 Router                -> route decision only
 LangGraph             -> orchestration only
 Tools                 -> validation and side effects
@@ -463,7 +460,7 @@ Codex should implement in this order:
 
 1. repository scaffold and configuration loading
 2. PostgreSQL migrations from `300-CONTRACTS.md`
-3. account context resolver
+3. agent identity resolver
 4. event store append/read with idempotency
 5. projection tables and projectors
 6. route definitions and embedding seed flow

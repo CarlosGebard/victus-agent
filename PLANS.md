@@ -1,48 +1,70 @@
-# Plan: V1 Self-Harm Safety Precheck
-
-## Task classification
-
-- feature
-- security
-- data pipeline
-- contract change
-- documentation
+# Llama Guard safety-precheck restructure
 
 ## Goal
 
-Implement a declarative V1 `safety_precheck` that detects self-harm risk from YAML rules, emits a structured decision, gates downstream routes/tools, and provides Aegis 2.0 dataset normalization/eval utilities.
+Move `safety_precheck` to the first graph node and make its first standalone test path use an injectable Llama Guard model decision instead of YAML rule matching.
 
 ## Scope
 
-- Add a minimal generic safety rule engine.
-- Add self-harm rules, decision matrix, and tool gates in YAML.
-- Replace the graph precheck implementation with the new engine.
-- Keep router behavior for safe inputs unchanged.
-- Add focused tests for loading, matching, golden positives, hard negatives, and graph routing fields.
-- Add basic Aegis loader/normalizer/eval scripts without committing dataset contents.
+- Keep the existing `state["safety"]` shape for downstream compatibility.
+- Add runtime config for the safety model.
+- Use the existing LLM port so tests can stub the model.
+- Update graph tests for the new node order.
 
 ## Assumptions
 
-- `context_bootstrap` may provide translated English safety text in `request.normalized_text`; V1 uses that as the primary safety input.
-- Existing graph route names can represent safety outcomes through `SafetyTriageRoute` and `EmergencySupportResponse` in safety state, even if only the router graph branch is fully skeletal today.
-- Aegis data is an offline governed source; network access is not required for unit tests.
+- `Llama-Guard-3-1B` is loaded locally through `transformers`.
+- Llama Guard returns text beginning with `safe` or `unsafe`.
+- Dataset/eval cleanup is a later change, not part of this first cut.
 
 ## Steps
 
-1. Add safety engine schemas, rule loader, evaluator, decision resolver, and precheck service.
-2. Add self-harm YAML rules, decision matrix, tool gates, and Aegis data-source metadata.
-3. Integrate graph `safety_precheck` with the new service and remove deprecated hardcoded self-harm logic from Python paths.
-4. Add Aegis loader, normalizer, and eval runner scripts.
-5. Add focused tests and run validation.
+1. Add `safety.model` runtime config.
+2. Replace graph safety precheck execution with an injectable Llama Guard call.
+3. Move `safety_precheck` before normalization/context bootstrap.
+4. Update focused tests with a stubbed Llama Guard response.
 
 ## Validation
 
-```bash
-uv run --extra test pytest tests/safety/test_self_harm_rules.py tests/agent/test_graph.py tests/routing/test_safety_gate.py
-uv run --extra test victus check
-```
+- `uv run pytest tests/agent/test_graph.py tests/application/test_config.py`
 
 ## Risks
 
-- Router still has broader safety behavior; the compatibility wrapper must not route safe inputs differently.
-- Full Aegis evaluation depends on downloading external data and is intentionally outside default tests.
+- If local model output format differs from standard Llama Guard, parser may need adjustment.
+- Running safety before normalization means it checks the raw/original user text.
+
+# ProfileUpdateNode V1
+
+## Goal
+
+Implement a V1 profile update classifier node that returns a validated `ProfileUpdateDecision` for durable or slow-changing user profile changes.
+
+## Scope
+
+- Add the profile update node package under the existing `src/agent/nodes/` package layout.
+- Keep the node free of database writes, event emission, plan creation/revision, meal logging, goal mutation, and science answers.
+- Support deterministic policy decisions for obvious cases and optional LLM-backed JSON decisions through the existing LLM port.
+- Enforce hard validation rules before returning a decision.
+
+## Assumptions
+
+- The repository package layout makes `src/agent/nodes/profile_update/` the smallest importable location.
+- Command handlers outside this node will consume the decision and emit events.
+- No tests are added for this task per request.
+
+## Steps
+
+1. Add schemas, prompts, skill manifest, and event mapping.
+2. Add deterministic policy helpers for reroutes, restrictions, preferences, removals, and ambiguity.
+3. Add validators that enforce the hard safety and shape rules.
+4. Add a thin node wrapper that uses LLM output when configured and falls back to policy heuristics.
+5. Run compile validation.
+
+## Validation
+
+- `uv run python -m compileall src/agent/nodes/profile_update`
+
+## Risks
+
+- Heuristics are intentionally conservative and will not cover every phrasing in V1.
+- Without tests in this task, validation is limited to import/compile checks.

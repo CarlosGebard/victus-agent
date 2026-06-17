@@ -30,6 +30,17 @@ def main() -> int:
         help="Run SafetyPrecheck and SelfHarmResponse for one English query.",
     )
     self_harm_parser.add_argument("query", help="English user query to evaluate.")
+    safety_check_parser = subparsers.add_parser(
+        "safety-check",
+        help="Run one prompt against the configured local Llama Guard safety model.",
+    )
+    safety_check_parser.add_argument("query", help="User prompt to evaluate.")
+    safety_check_parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=64,
+        help="Maximum tokens to generate from the local guard model.",
+    )
     rebuild_parser = subparsers.add_parser("projections-rebuild", help="Rebuild projections for a user.")
     rebuild_parser.add_argument("user_id")
 
@@ -58,6 +69,8 @@ def main() -> int:
         return _smoke_projectors()
     if args.command == "self-harm-response":
         return _self_harm_response(args.query)
+    if args.command == "safety-check":
+        return _safety_check(args.query, max_new_tokens=args.max_new_tokens)
     if args.command == "projections-rebuild":
         return _projections_rebuild(args.user_id)
 
@@ -122,8 +135,9 @@ def _smoke_event_store() -> int:
 def _self_harm_response(query: str) -> int:
     import json
 
-    from agent.nodes.runtime import safety_precheck
     from agent.nodes.self_harm_response import self_harm_response
+    from safety.engine.safety_precheck import SafetyPrecheck
+    from safety.engine.schemas import SafetyPrecheckInput
 
     state = {
         "request": {
@@ -131,13 +145,63 @@ def _self_harm_response(query: str) -> int:
             "working_text": query,
         }
     }
-    state = safety_precheck(state)
+    result = SafetyPrecheck().check(
+        SafetyPrecheckInput(
+            original_text=query,
+            working_text=query,
+        )
+    )
+    state["safety"] = {
+        "status": "ok" if result.decision == "allow" else "blocked",
+        "reasons": result.reason_codes,
+        "decision": result.decision,
+        "severity": result.severity,
+        "categories": result.categories,
+        "matched_rules": result.matched_rules,
+        "reason_codes": result.reason_codes,
+        "blocked_tools": result.blocked_tools,
+        "allowed_next_route": result.allowed_next_route,
+        "audit_required": result.audit_required,
+    }
     state = self_harm_response()(state)
     print(
         json.dumps(
             {
                 "safety": state.get("safety", {}),
                 "response": state.get("response", {}),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _safety_check(query: str, *, max_new_tokens: int = 64) -> int:
+    import json
+
+    from agent.nodes.runtime import _llama_guard_prompt, _safety_from_llama_guard
+    from application.config import load_runtime_config
+    from infrastructure.llm.local_llama_guard import LocalLlamaGuardClient
+
+    config = load_runtime_config()
+    prompt = _llama_guard_prompt(query)
+    try:
+        response = LocalLlamaGuardClient(config.safety.model).complete(
+            prompt,
+            max_new_tokens=max_new_tokens,
+        )
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(
+        json.dumps(
+            {
+                "model": config.safety.model,
+                "prompt": prompt,
+                "raw_response": response.text,
+                "safety": _safety_from_llama_guard(response.text),
+                "raw": response.raw,
             },
             ensure_ascii=False,
             indent=2,

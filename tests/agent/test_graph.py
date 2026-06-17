@@ -27,11 +27,14 @@ class StubRouter:
 
 
 class StubLLMClient:
-    def __init__(self) -> None:
+    def __init__(self, safety_response: str = "safe") -> None:
         self.requests: list[LLMRequest] = []
+        self.safety_response = safety_response
 
     def complete(self, request: LLMRequest) -> LLMResponse:
         self.requests.append(request)
+        if request.operation == "agent.safety_precheck.llama_guard":
+            return LLMResponse(text=self.safety_response)
         return LLMResponse(text="sync")
 
     async def acomplete(self, request: LLMRequest) -> LLMResponse:
@@ -73,17 +76,18 @@ class StubSessionContextRepository:
 
 
 def test_graph_routes_and_composes_deterministic_response() -> None:
-    graph = build_graph(router=StubRouter())
+    graph = build_graph(router=StubRouter(), llm_client=StubLLMClient())
 
-    result = graph.invoke({"request": {"raw_text": "hoy comi arroz"}})
+    result = asyncio.run(graph.ainvoke({"request": {"raw_text": "hoy comi arroz"}}))
 
-    assert result["request"] == {"original_text": "hoy comi arroz", "working_text": "hoy comi arroz"}
+    assert result["request"] == {"original_text": "hoy comi arroz", "working_text": "make me a plan"}
     assert result["intent"]["target_node"] == "EventCaptureGraph"
-    assert result["response"]["user_message"] == "Route selected: EventCaptureGraph"
+    assert result["response"]["user_message"] == "llm response"
     assert result["audit"]["node_path"] == [
-        "normalize_request",
-        "context_bootstrap",
         "safety_precheck",
+        "normalize_request",
+        "context_bootstrap.translate_working_text",
+        "context_bootstrap",
         "route_intent",
         "compose_response",
         "summarize_after_response",
@@ -98,18 +102,24 @@ def test_graph_composes_response_through_llm_port() -> None:
 
     assert result["response"]["user_message"] == "llm response"
     assert result["request"]["working_text"] == "make me a plan"
-    assert llm_client.requests[0].operation == "agent.context_bootstrap.translate_normalized_text"
-    assert llm_client.requests[0].model == "groq/llama-3.1-8b-instant"
-    assert llm_client.requests[1].operation == "agent.compose_response"
-    assert llm_client.requests[1].model == "litellm_proxy/gemini-flash-lite"
+    assert llm_client.requests[0].operation == "agent.safety_precheck.llama_guard"
+    assert llm_client.requests[0].model == "meta-llama/Llama-Guard-3-1B"
+    assert llm_client.requests[1].operation == "agent.context_bootstrap.translate_normalized_text"
+    assert llm_client.requests[1].model == "groq/llama-3.1-8b-instant"
+    assert llm_client.requests[2].operation == "agent.compose_response"
+    assert llm_client.requests[2].model == "litellm_proxy/gemini-flash-lite"
 
 
 def test_graph_bootstraps_pending_context_before_routing() -> None:
     repository = StubSessionContextRepository()
     router = StubRouter("PlanRevisionGraph")
-    graph = build_graph(router=router, session_context_repository=repository)
+    graph = build_graph(
+        router=router,
+        session_context_repository=repository,
+        llm_client=StubLLMClient(),
+    )
 
-    result = graph.invoke(
+    result = asyncio.run(graph.ainvoke(
         {
             "request": {
                 "raw_text": "si, mañana",
@@ -117,7 +127,7 @@ def test_graph_bootstraps_pending_context_before_routing() -> None:
                 "conversation_id": "conversation-1",
             }
         }
-    )
+    ))
 
     assert "Pending interaction context" in result["request"]["working_text"]
     assert "move dinner to tomorrow" in result["request"]["working_text"]
@@ -126,43 +136,27 @@ def test_graph_bootstraps_pending_context_before_routing() -> None:
     assert repository.cleared_pending == ["conversation-1"]
 
 
-def test_graph_routes_explicit_self_harm_to_emergency_support_response() -> None:
-    graph = build_graph(router=StubRouter())
+def test_graph_routes_unsafe_llama_guard_result_to_safety_response() -> None:
+    graph = build_graph(router=StubRouter(), llm_client=StubLLMClient("unsafe\nS11"))
 
-    result = graph.invoke(
+    result = asyncio.run(graph.ainvoke(
         {
             "request": {
                 "original_text": "necesito ayuda",
                 "working_text": "i want to kill myself",
             }
         }
-    )
+    ))
 
-    assert result["safety"]["decision"] == "emergency_escalation"
-    assert result["safety"]["matched_rules"] == ["self_harm.explicit_suicidal_intent"]
-    assert result["response"]["mode"] == "emergency_support"
-    assert "988" in result["response"]["user_message"]
+    assert result["safety"]["decision"] == "route_to_safety_triage"
+    assert result["safety"]["categories"] == ["self_harm"]
+    assert result["safety"]["reason_codes"] == ["llama_guard_unsafe"]
+    assert result["response"]["mode"] == "safety_triage"
     assert result["audit"]["node_path"] == [
-        "normalize_request",
-        "context_bootstrap",
         "safety_precheck",
+        "normalize_request",
+        "context_bootstrap.translate_working_text",
+        "context_bootstrap",
         "self_harm_response",
         "summarize_after_response",
     ]
-
-
-def test_graph_routes_high_self_harm_to_adjacent_safety_response() -> None:
-    graph = build_graph(router=StubRouter())
-
-    result = graph.invoke(
-        {
-            "request": {
-                "original_text": "me quiero hacer dano",
-                "working_text": "i am going to hurt myself",
-            }
-        }
-    )
-
-    assert result["safety"]["decision"] == "route_to_safety_triage"
-    assert result["response"]["mode"] == "safety_triage"
-    assert "route_intent" not in result["audit"]["node_path"]

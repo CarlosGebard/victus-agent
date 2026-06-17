@@ -14,7 +14,7 @@ owners:
 
 This document defines the stable contracts required to implement Victus Agent V1.
 
-It is the implementation authority for schemas, event semantics, route labels, tool envelopes, account identity, PostgreSQL tables, projection behavior, and runtime state.
+It is the implementation authority for schemas, event semantics, route labels, tool envelopes, agent identity, PostgreSQL tables, projection behavior, and runtime state.
 
 ## 2. Contract Principles
 
@@ -22,7 +22,7 @@ It is the implementation authority for schemas, event semantics, route labels, t
 - Projections are derived read models.
 - Session context is compact conversational memory, not domain truth.
 - LangGraph state is orchestration state only.
-- Account identity and user profile identity are separate concepts.
+- The webapp owns platform users; this database stores only the agent's identity reference.
 - Tool handlers validate and execute; the LLM proposes but does not persist directly.
 - Router embeddings assist classification but do not bypass safety or ambiguity rules.
 - All write operations require idempotency keys.
@@ -32,81 +32,25 @@ Fundamental shared contracts imported from `CarlosGebard/victus-docs` live under
 
 ## 3. Identity Contracts
 
-### 3.1 Account
+### 3.1 Agent User Identity
 
-Represents an authenticated application account.
+Represents the user as seen by the agent and the external subject it came from.
 
-Canonical identifier: `account_id`.
+Canonical identifier: `agent_user_id`.
 
-Identity must be resolved from trusted authentication claims, not from free-text user input.
+This table is not the platform user table. It is a minimal bridge from an external system such as
+`webapp`, `cli`, `test`, or `import` into the agent runtime.
 
 ```sql
-CREATE TABLE accounts (
-    account_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    auth_provider TEXT NOT NULL,
-    auth_subject TEXT NOT NULL,
+CREATE TABLE agent_user_identities (
+    agent_user_id TEXT PRIMARY KEY,
+    external_system TEXT NOT NULL,
+    external_subject TEXT NOT NULL,
     email TEXT NULL,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled', 'deleted')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (auth_provider, auth_subject)
-);
-```
-
-### 3.2 User
-
-Represents the nutrition/lifestyle subject Victus reasons about.
-
-Canonical identifier: `user_id`.
-
-V1 may use one user per account, but the schema must not collapse `account_id` and `user_id` into one concept.
-
-```sql
-CREATE TABLE users (
-    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    primary_account_id UUID NOT NULL REFERENCES accounts(account_id),
-    display_name TEXT NULL,
-    locale TEXT NULL,
-    timezone TEXT NULL,
-    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled', 'deleted')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-### 3.3 Account User Membership
-
-Defines which accounts can access which user profiles.
-
-```sql
-CREATE TABLE account_user_memberships (
-    account_id UUID NOT NULL REFERENCES accounts(account_id),
-    user_id UUID NOT NULL REFERENCES users(user_id),
-    role TEXT NOT NULL CHECK (role IN ('owner', 'coach', 'viewer')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (account_id, user_id)
-);
-```
-
-### 3.4 Connected Account
-
-Represents an external provider connection.
-
-Token material must not be stored directly. Store `token_ref` only.
-
-```sql
-CREATE TABLE connected_accounts (
-    connection_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id UUID NOT NULL REFERENCES accounts(account_id),
-    provider TEXT NOT NULL,
-    external_subject TEXT NOT NULL,
-    scopes JSONB NOT NULL DEFAULT '[]'::jsonb,
-    token_ref TEXT NULL,
-    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired', 'error')),
-    connected_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at TIMESTAMPTZ NULL,
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    UNIQUE (provider, external_subject)
+    CONSTRAINT ux_agent_identity_external_subject UNIQUE (external_system, external_subject)
 );
 ```
 
@@ -116,11 +60,9 @@ CREATE TABLE connected_accounts (
 
 ```ts
 type AuthContext = {
-  account_id: string
-  user_id: string
-  auth_provider: string
-  auth_subject: string
-  roles: Array<'owner' | 'coach' | 'viewer'>
+  agent_user_id: string
+  external_system: string
+  external_subject: string
   locale?: string
   timezone?: string
 }
@@ -128,10 +70,10 @@ type AuthContext = {
 
 Validation rules:
 
-- `account_id` must reference an active account.
-- `user_id` must be accessible by `account_id` through `account_user_memberships`.
-- write actions require role `owner` or a future explicit write permission.
-- local development may use a fixed test account only when `APP_ENV=local`.
+- `agent_user_id` must reference an active `agent_user_identities` row.
+- `external_system` and `external_subject` must come from trusted caller context.
+- write authorization is delegated to the external system until the agent owns permissions.
+- local development may use a fixed test identity only when `APP_ENV=local`.
 
 ## 5. Request Context Contract
 
@@ -139,8 +81,7 @@ Validation rules:
 type RequestContext = {
   request_id: string
   trace_id: string
-  account_id: string
-  user_id: string
+  agent_user_id: string
   raw_text: string
   normalized_text?: string
   received_at: string
@@ -154,7 +95,7 @@ Rules:
 
 - `request_id` must be unique per incoming user message.
 - `trace_id` must connect route decisions, tool executions, events, and response composition.
-- `account_id` and `user_id` must come from `AuthContext`.
+- `agent_user_id` must come from `AuthContext`.
 
 ## 6. PostgreSQL Required Extensions
 
@@ -167,328 +108,25 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 `vector` is required for embedding-assisted routing.
 
-## 7. Event Store Contract
+## 7. Database Schema Contract
 
-### 7.1 Purpose
+The authoritative V1 PostgreSQL schema is `docs/contracts/postgres-schema-v1.md`.
 
-`user_events` stores immutable facts about user-affecting actions.
+Key guarantees:
 
-Events represent history, not current state.
-
-### 7.2 Schema
-
-```sql
-CREATE TABLE user_events (
-    seq BIGSERIAL PRIMARY KEY,
-    event_id UUID NOT NULL DEFAULT gen_random_uuid(),
-    account_id UUID NOT NULL REFERENCES accounts(account_id),
-    user_id UUID NOT NULL REFERENCES users(user_id),
-    event_type TEXT NOT NULL,
-    aggregate_type TEXT NOT NULL,
-    aggregate_id TEXT NOT NULL,
-    actor_type TEXT NOT NULL CHECK (actor_type IN ('user', 'system', 'agent', 'tool')),
-    actor_id TEXT NULL,
-    correlation_id TEXT NOT NULL,
-    causation_id TEXT NULL,
-    idempotency_key TEXT NOT NULL,
-    occurred_at TIMESTAMPTZ NOT NULL,
-    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    payload JSONB NOT NULL,
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    UNIQUE (event_id),
-    UNIQUE (user_id, idempotency_key)
-);
-
-CREATE INDEX idx_user_events_user_seq ON user_events(user_id, seq);
-CREATE INDEX idx_user_events_type ON user_events(event_type);
-CREATE INDEX idx_user_events_correlation ON user_events(correlation_id);
-```
-
-### 7.3 Event Envelope
-
-```ts
-type UserEventEnvelope<TPayload = unknown> = {
-  event_id: string
-  seq: number
-  account_id: string
-  user_id: string
-  event_type: string
-  aggregate_type: string
-  aggregate_id: string
-  actor_type: 'user' | 'system' | 'agent' | 'tool'
-  actor_id?: string
-  correlation_id: string
-  causation_id?: string
-  idempotency_key: string
-  occurred_at: string
-  recorded_at: string
-  payload: TPayload
-  metadata: Record<string, unknown>
-}
-```
-
-### 7.4 Event Rules
-
-- Events are append-only.
-- Old events must not be updated to correct user history.
-- Duplicate idempotency keys for the same user must return the original event result.
-- Every write tool must emit zero or more events explicitly.
-- Events must include account and user identity.
-- Events must not contain raw provider tokens.
+- `user_events` is the source of truth.
+- `event_type` remains `TEXT`; allowed events are validated through `docs/contracts/events/event-registry.yml` and code registries.
+- projections remain JSONB-derived state.
+- `agent_turns` and `node_runs` own operational traceability.
+- `conversation_state_summaries` is compact memory, not user truth.
+- `pending_interaction_state` stores pending clarification/confirmation state.
+- no hard foreign keys point to the webapp database.
 
 ## 8. Domain Event Types V1
 
-Allowed V1 event types:
-
-```text
-meal.logged
-meal.edited
-meal.deleted
-biometrics.logged
-symptom.logged
-restriction.added
-restriction.updated
-preference.updated
-goal.set
-goal.adjusted
-plan.session_started
-plan.revision_created
-plan.artifact_saved
-plan.session_ended
-feedback.recorded
-feedback.resolved
-clarification.requested
-clarification.resolved
-safety.guard_triggered
-safety.action_blocked
-claim.generated
-evidence.cited
-```
-
-### 8.1 Example Payload Shapes
-
-```ts
-type MealLoggedPayload = {
-  meal_id: string
-  meal_type?: 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'unknown'
-  consumed_at?: string
-  description: string
-  items?: Array<{ name: string; quantity?: string; notes?: string }>
-  estimated_nutrition?: Record<string, number | string>
-  source: 'user_text' | 'manual_form' | 'import'
-}
-
-type RestrictionAddedPayload = {
-  restriction_id: string
-  category: 'allergy' | 'intolerance' | 'preference' | 'medical' | 'ethical' | 'religious' | 'other'
-  label: string
-  severity?: 'hard' | 'soft' | 'unknown'
-  notes?: string
-}
-
-type GoalSetPayload = {
-  goal_id: string
-  goal_type: 'fat_loss' | 'muscle_gain' | 'maintenance' | 'performance' | 'health' | 'custom'
-  target?: Record<string, unknown>
-  horizon?: string
-  status: 'active' | 'paused' | 'completed'
-}
-
-type PlanArtifactSavedPayload = {
-  session_id: string
-  revision_id: string
-  artifact_id: string
-  artifact_type: 'diet_plan' | 'meal_plan' | 'review' | 'recommendation'
-  status: 'candidate' | 'accepted' | 'superseded' | 'rejected'
-}
-```
+Allowed event types are registered in `docs/contracts/events/event-registry.yml`.
 
 Payloads may evolve, but new required fields require a major contract change.
-
-## 9. Projector Offset Contract
-
-```sql
-CREATE TABLE projector_offsets (
-    projector_name TEXT PRIMARY KEY,
-    last_seq BIGINT NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-Rules:
-
-- Each projector owns one offset row.
-- Offsets track the highest processed `user_events.seq`.
-- Projectors must be idempotent.
-
-## 10. Projection Contracts
-
-### 10.1 User Profile Projection
-
-```sql
-CREATE TABLE user_profile_projection (
-    user_id UUID PRIMARY KEY REFERENCES users(user_id),
-    display_name TEXT NULL,
-    locale TEXT NULL,
-    timezone TEXT NULL,
-    preferences JSONB NOT NULL DEFAULT '{}'::jsonb,
-    active_goal JSONB NULL,
-    updated_from_seq BIGINT NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-Purpose: fast read model for stable user context.
-
-Forbidden responsibility: storing event history.
-
-### 10.2 Constraint Projection
-
-```sql
-CREATE TABLE constraint_projection (
-    user_id UUID PRIMARY KEY REFERENCES users(user_id),
-    restrictions JSONB NOT NULL DEFAULT '[]'::jsonb,
-    preferences JSONB NOT NULL DEFAULT '[]'::jsonb,
-    hard_constraints JSONB NOT NULL DEFAULT '[]'::jsonb,
-    soft_constraints JSONB NOT NULL DEFAULT '[]'::jsonb,
-    updated_from_seq BIGINT NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-Purpose: fast read model for planning constraints.
-
-### 10.3 Nutrition Status Projection
-
-```sql
-CREATE TABLE nutrition_status_projection (
-    user_id UUID PRIMARY KEY REFERENCES users(user_id),
-    recent_meals JSONB NOT NULL DEFAULT '[]'::jsonb,
-    biometrics JSONB NOT NULL DEFAULT '{}'::jsonb,
-    symptoms JSONB NOT NULL DEFAULT '[]'::jsonb,
-    adherence_metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
-    updated_from_seq BIGINT NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-Purpose: current nutrition/lifestyle status for planning, review, and safety context.
-
-`adherence_metrics` may later include `adherence_rate_7d`, `adherence_rate_30d`, `weekend_drop_delta`, `late_meal_frequency`, `consistency_score`, and `trigger_pattern_score`.
-
-### 10.4 Planning History Projection
-
-```sql
-CREATE TABLE planning_history_projection (
-    user_id UUID PRIMARY KEY REFERENCES users(user_id),
-    active_session_id UUID NULL,
-    active_revision_id UUID NULL,
-    active_artifact_id UUID NULL,
-    recent_feedback JSONB NOT NULL DEFAULT '[]'::jsonb,
-    planning_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
-    updated_from_seq BIGINT NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-Purpose: fast read model for current planning state.
-
-## 11. Planning Storage Contracts
-
-```sql
-CREATE TABLE planning_sessions (
-    session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id UUID NOT NULL REFERENCES accounts(account_id),
-    user_id UUID NOT NULL REFERENCES users(user_id),
-    status TEXT NOT NULL CHECK (status IN ('open', 'completed', 'superseded', 'abandoned')),
-    goal_id TEXT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
-);
-
-CREATE TABLE plan_revisions (
-    revision_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id UUID NOT NULL REFERENCES planning_sessions(session_id),
-    account_id UUID NOT NULL REFERENCES accounts(account_id),
-    user_id UUID NOT NULL REFERENCES users(user_id),
-    revision_number INTEGER NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('candidate', 'accepted', 'superseded', 'rejected')),
-    parent_revision_id UUID NULL REFERENCES plan_revisions(revision_id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    UNIQUE (session_id, revision_number)
-);
-
-CREATE TABLE plan_artifacts (
-    artifact_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    revision_id UUID NOT NULL REFERENCES plan_revisions(revision_id),
-    account_id UUID NOT NULL REFERENCES accounts(account_id),
-    user_id UUID NOT NULL REFERENCES users(user_id),
-    artifact_type TEXT NOT NULL CHECK (artifact_type IN ('diet_plan', 'meal_plan', 'review', 'recommendation')),
-    content JSONB NOT NULL,
-    evidence_refs JSONB NOT NULL DEFAULT '[]'::jsonb,
-    status TEXT NOT NULL CHECK (status IN ('candidate', 'accepted', 'superseded', 'rejected')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
-);
-```
-
-Rules:
-
-- Plan artifacts are versioned through revisions.
-- Accepted revisions should supersede previous active revisions explicitly.
-- Large artifacts may later move to object storage, but `artifact_id` remains canonical.
-
-## 12. Clarification State Contract
-
-```sql
-CREATE TABLE clarification_state (
-    clarification_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id UUID NOT NULL REFERENCES accounts(account_id),
-    user_id UUID NOT NULL REFERENCES users(user_id),
-    request_id TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('pending', 'resolved', 'expired', 'superseded')),
-    missing_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
-    question TEXT NOT NULL,
-    expected_answer_type TEXT NULL,
-    resume_route TEXT NULL,
-    resume_node TEXT NULL,
-    context JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    resolved_at TIMESTAMPTZ NULL
-);
-```
-
-Rules:
-
-- pending clarification should pause write execution
-- resolved clarification may resume a route
-- clarification state is not a substitute for event history
-
-## 13. Evidence Reference Contract
-
-```sql
-CREATE TABLE evidence_references (
-    evidence_ref_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id UUID NOT NULL REFERENCES accounts(account_id),
-    user_id UUID NOT NULL REFERENCES users(user_id),
-    artifact_id UUID NULL REFERENCES plan_artifacts(artifact_id),
-    claim_id TEXT NULL,
-    source_type TEXT NOT NULL CHECK (source_type IN ('paper', 'guideline', 'internal_evidence', 'manual_note', 'unknown')),
-    source_id TEXT NULL,
-    citation JSONB NOT NULL DEFAULT '{}'::jsonb,
-    support_summary TEXT NULL,
-    confidence TEXT NULL CHECK (confidence IS NULL OR confidence IN ('low', 'medium', 'high')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-Rules:
-
-- evidence references support claims or artifacts
-- evidence references do not define user state
-- evidence retrieval results are not automatically persisted unless attached by a tool
 
 ## 14. Intent Router Contracts
 
@@ -550,25 +188,8 @@ ON intent_route_examples USING hnsw (embedding vector_cosine_ops);
 
 ### 14.3 Route Decision Log
 
-```sql
-CREATE TABLE route_decisions (
-    route_decision_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    request_id TEXT NOT NULL,
-    trace_id TEXT NOT NULL,
-    account_id UUID NOT NULL REFERENCES accounts(account_id),
-    user_id UUID NOT NULL REFERENCES users(user_id),
-    selected_route_label TEXT NOT NULL,
-    target_graph TEXT NOT NULL,
-    confidence NUMERIC(5,4) NOT NULL,
-    routing_method TEXT NOT NULL CHECK (routing_method IN ('rule', 'embedding', 'hybrid', 'llm_fallback', 'clarification', 'safety_override')),
-    top_candidates JSONB NOT NULL DEFAULT '[]'::jsonb,
-    ambiguity_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
-    safety_status TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_route_decisions_user_created ON route_decisions(user_id, created_at DESC);
-```
+Route decisions are captured in `agent_turns.selected_node`, `node_runs`, and metadata fields.
+V1 does not create a separate `route_decisions` table.
 
 ### 14.4 Router Decision Type
 
@@ -666,8 +287,7 @@ type ToolResult<TData = unknown> = {
   tool_name: string
   request_id: string
   trace_id: string
-  account_id: string
-  user_id: string
+  agent_user_id: string
   data?: TData
   events?: Array<{ event_id: string; event_type: string; seq: number }>
   warnings: string[]
@@ -686,49 +306,12 @@ Rules:
 
 ## 17. Tool Execution Log Contract
 
-```sql
-CREATE TABLE tool_executions (
-    tool_execution_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    request_id TEXT NOT NULL,
-    trace_id TEXT NOT NULL,
-    account_id UUID NOT NULL REFERENCES accounts(account_id),
-    user_id UUID NOT NULL REFERENCES users(user_id),
-    tool_name TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('success', 'needs_clarification', 'blocked', 'rejected', 'error')),
-    idempotency_key TEXT NULL,
-    input_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
-    output_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
-    event_refs JSONB NOT NULL DEFAULT '[]'::jsonb,
-    error_code TEXT NULL,
-    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at TIMESTAMPTZ NULL
-);
-
-CREATE INDEX idx_tool_executions_request ON tool_executions(request_id);
-CREATE INDEX idx_tool_executions_user_created ON tool_executions(user_id, started_at DESC);
-```
+Tool execution traceability is captured in `node_runs` and event references in `user_events`.
+V1 does not create a separate `tool_executions` table.
 
 ## 18. Agent Run Contract
 
-```sql
-CREATE TABLE agent_runs (
-    run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    request_id TEXT NOT NULL UNIQUE,
-    trace_id TEXT NOT NULL,
-    account_id UUID NOT NULL REFERENCES accounts(account_id),
-    user_id UUID NOT NULL REFERENCES users(user_id),
-    status TEXT NOT NULL CHECK (status IN ('running', 'success', 'needs_clarification', 'blocked', 'error')),
-    raw_text TEXT NOT NULL,
-    normalized_text TEXT NULL,
-    selected_route_label TEXT NULL,
-    response_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
-    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at TIMESTAMPTZ NULL,
-    error_code TEXT NULL
-);
-```
-
-Purpose: operational traceability for one agent turn.
+`agent_turns` is the V1 agent run table.
 
 Forbidden responsibility: replacing event history or projection state.
 
@@ -757,8 +340,7 @@ Write tools must receive:
 type ToolExecutionContext = {
   request_id: string
   trace_id: string
-  account_id: string
-  user_id: string
+  agent_user_id: string
   actor_type: 'user' | 'agent' | 'tool' | 'system'
   idempotency_key: string
   safety_status: 'ok' | 'warning' | 'blocked' | 'needs_clarification'

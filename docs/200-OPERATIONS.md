@@ -23,13 +23,13 @@ related_docs:
 
 ## 1. Operational Overview
 
-`victus-agent` is operated as an account-aware agent runtime.
+`victus-agent` is operated as an agent-local user runtime.
 
-A normal runtime execution receives an authenticated message, resolves `account_id` and `user_id`, performs safety precheck, routes intent with embeddings, executes a graph branch, calls typed tools, appends domain events, updates projections, and returns a traceable response.
+A normal runtime execution receives an authenticated message, resolves `agent_user_id` from the caller identity, performs safety precheck, routes intent with embeddings, executes a graph branch, calls typed tools, appends domain events, updates projections, and returns a traceable response.
 
 Operational safety depends on five guarantees:
 
-- requests always have validated account context
+- requests always have validated agent user identity
 - write operations always use idempotency keys
 - events are immutable
 - projections are rebuildable
@@ -55,7 +55,7 @@ Staging should use production-like auth, database migrations, observability, and
 
 Staging is used to validate:
 
-- account context mapping
+- agent identity mapping
 - route confidence thresholds
 - tool idempotency
 - event/projector consistency
@@ -199,9 +199,9 @@ make db-migrate
 
 The migration set must create:
 
-- account identity tables
+- agent identity tables
 - user membership tables
-- connected account references
+- external identity references
 - event store
 - projector offsets
 - projections
@@ -280,7 +280,7 @@ make dev
 Operationally, one turn should produce:
 
 - request id
-- account id
+- agent user id
 - user id
 - safety result
 - router decision
@@ -322,8 +322,7 @@ The runtime should log or trace:
 
 - `request_id`
 - `trace_id`
-- `account_id`
-- `user_id`
+- `agent_user_id`
 - selected route
 - top route candidates
 - router confidence
@@ -377,7 +376,7 @@ If events cannot be appended, do not pretend the action succeeded. Return an err
 | Wrong route for Spanish input | weak multilingual examples or wrong embedding model | add examples and reseed embeddings |
 | Duplicate meals after retries | idempotency key missing or ignored | inspect `user_events.idempotency_key` constraint |
 | Projection stale | projector failed or offset behind | run `make projections-status` then catch up/rebuild |
-| Auth context missing | invalid provider config or local auth disabled | inspect auth middleware and `accounts` lookup |
+| Auth context missing | invalid external identity config or local auth disabled | inspect identity resolver and `agent_user_identities` lookup |
 | Plan saved but not visible | planning event appended but projection failed | rebuild planning projection |
 | Safety warning not shown | response composer ignored safety state | test blocked/warning responses |
 

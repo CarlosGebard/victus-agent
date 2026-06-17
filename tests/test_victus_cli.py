@@ -94,6 +94,39 @@ def test_cli_self_harm_response_prints_json(monkeypatch: pytest.MonkeyPatch, cap
     assert '"mode": "safety_triage"' in output
 
 
+def test_cli_safety_check_prints_model_prompt_raw_response_and_safety(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    from infrastructure.llm.local_llama_guard import LocalLlamaGuardResult
+    from infrastructure.llm import local_llama_guard
+
+    class StubLLMClient:
+        def __init__(self, model_name: str) -> None:
+            assert model_name == "meta-llama/Llama-Guard-3-1B"
+
+        def complete(self, prompt: str, *, max_new_tokens: int):
+            assert "User message:\nI am going to hurt myself" in prompt
+            assert max_new_tokens == 64
+            return LocalLlamaGuardResult(
+                text="unsafe\nS11",
+                prompt=prompt,
+                raw={"total_tokens": 5},
+            )
+
+    monkeypatch.setattr(local_llama_guard, "LocalLlamaGuardClient", StubLLMClient)
+    monkeypatch.setattr(sys, "argv", ["victus", "safety-check", "I am going to hurt myself"])
+
+    assert cli_main() == 0
+
+    output = capsys.readouterr().out
+    assert '"model": "meta-llama/Llama-Guard-3-1B"' in output
+    assert '"raw_response": "unsafe\\nS11"' in output
+    assert '"categories": [' in output
+    assert '"self_harm"' in output
+    assert '"total_tokens": 5' in output
+
+
 class CompletedProcess:
     def __init__(self, returncode: int) -> None:
         self.returncode = returncode

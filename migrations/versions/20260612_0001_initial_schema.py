@@ -18,70 +18,130 @@ depends_on = None
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
 
+    _create_agent_user_identities()
+    _create_agent_turns()
+    _create_node_runs()
+    _create_user_events()
+    _create_projector_offsets()
+    _create_projection_tables()
+    _create_session_context_tables()
+
+
+def downgrade() -> None:
+    op.drop_index("ix_pending_interaction_state_user_updated", table_name="pending_interaction_state")
+    op.drop_table("pending_interaction_state")
+    op.drop_index(
+        "ix_conversation_state_summaries_user_updated",
+        table_name="conversation_state_summaries",
+    )
+    op.drop_table("conversation_state_summaries")
+    op.drop_table("planning_history_projection")
+    op.drop_table("nutrition_status_projection")
+    op.drop_table("constraint_projection")
+    op.drop_table("user_profile_projection")
+    op.drop_table("projector_offsets")
+    op.drop_index("ux_user_events_idempotency", table_name="user_events")
+    op.drop_index("ix_user_events_payload_gin", table_name="user_events")
+    op.drop_index("ix_user_events_turn", table_name="user_events")
+    op.drop_index("ix_user_events_aggregate", table_name="user_events")
+    op.drop_index("ix_user_events_type", table_name="user_events")
+    op.drop_index("ix_user_events_user_recorded_at", table_name="user_events")
+    op.drop_index("ix_user_events_user_occurred_at", table_name="user_events")
+    op.drop_index("ix_user_events_user_seq", table_name="user_events")
+    op.drop_table("user_events")
+    op.drop_index("ix_node_runs_node_name", table_name="node_runs")
+    op.drop_index("ix_node_runs_user_created", table_name="node_runs")
+    op.drop_index("ix_node_runs_turn", table_name="node_runs")
+    op.drop_table("node_runs")
+    op.drop_index("ix_agent_turns_selected_node", table_name="agent_turns")
+    op.drop_index("ix_agent_turns_conversation_created", table_name="agent_turns")
+    op.drop_index("ix_agent_turns_user_created", table_name="agent_turns")
+    op.drop_table("agent_turns")
+    op.drop_index("ix_agent_user_identities_email", table_name="agent_user_identities")
+    op.drop_table("agent_user_identities")
+
+
+def _create_agent_user_identities() -> None:
     op.create_table(
-        "accounts",
-        sa.Column("account_id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("auth_provider", sa.Text(), nullable=False),
-        sa.Column("auth_subject", sa.Text(), nullable=False),
+        "agent_user_identities",
+        sa.Column("agent_user_id", sa.Text(), primary_key=True),
+        sa.Column("external_system", sa.Text(), nullable=False),
+        sa.Column("external_subject", sa.Text(), nullable=False),
         sa.Column("email", sa.Text(), nullable=True),
         sa.Column("status", sa.Text(), nullable=False, server_default="active"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.CheckConstraint("status IN ('active', 'disabled', 'deleted')", name="ck_accounts_status"),
-        sa.UniqueConstraint("auth_provider", "auth_subject", name="ux_accounts_auth_identity"),
+        sa.CheckConstraint(
+            "status IN ('active', 'disabled', 'deleted')",
+            name="ck_agent_user_identities_status",
+        ),
+        sa.UniqueConstraint(
+            "external_system",
+            "external_subject",
+            name="ux_agent_user_identities_external_identity",
+        ),
     )
-    op.execute("ALTER TABLE accounts ALTER COLUMN account_id SET DEFAULT gen_random_uuid()")
+    op.create_index("ix_agent_user_identities_email", "agent_user_identities", ["email"])
 
+
+def _create_agent_turns() -> None:
     op.create_table(
-        "users",
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("primary_account_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("display_name", sa.Text(), nullable=True),
-        sa.Column("locale", sa.Text(), nullable=True),
-        sa.Column("timezone", sa.Text(), nullable=True),
-        sa.Column("status", sa.Text(), nullable=False, server_default="active"),
+        "agent_turns",
+        sa.Column("turn_id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("conversation_id", sa.Text(), nullable=False),
+        sa.Column("user_id", sa.Text(), nullable=False),
+        sa.Column("input_text", sa.Text(), nullable=False),
+        sa.Column("normalized_text", sa.Text(), nullable=True),
+        sa.Column("selected_node", sa.Text(), nullable=True),
+        sa.Column("final_status", sa.Text(), nullable=False, server_default="completed"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.CheckConstraint("status IN ('active', 'disabled', 'deleted')", name="ck_users_status"),
-        sa.ForeignKeyConstraint(["primary_account_id"], ["accounts.account_id"]),
-    )
-    op.execute("ALTER TABLE users ALTER COLUMN user_id SET DEFAULT gen_random_uuid()")
-
-    op.create_table(
-        "account_user_memberships",
-        sa.Column("account_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("role", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.CheckConstraint("role IN ('owner', 'coach', 'viewer')", name="ck_account_user_memberships_role"),
-        sa.ForeignKeyConstraint(["account_id"], ["accounts.account_id"]),
-        sa.ForeignKeyConstraint(["user_id"], ["users.user_id"]),
-        sa.PrimaryKeyConstraint("account_id", "user_id"),
-    )
-
-    op.create_table(
-        "connected_accounts",
-        sa.Column("connection_id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("account_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("provider", sa.Text(), nullable=False),
-        sa.Column("external_subject", sa.Text(), nullable=False),
-        sa.Column("scopes", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")),
-        sa.Column("token_ref", sa.Text(), nullable=True),
-        sa.Column("status", sa.Text(), nullable=False, server_default="active"),
-        sa.Column("connected_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("metadata", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.CheckConstraint("status IN ('active', 'revoked', 'expired', 'error')", name="ck_connected_accounts_status"),
-        sa.ForeignKeyConstraint(["account_id"], ["accounts.account_id"]),
-        sa.UniqueConstraint("provider", "external_subject", name="ux_connected_accounts_provider_subject"),
+        sa.CheckConstraint(
+            "final_status IN ('completed', 'failed', 'blocked', 'needs_user_response')",
+            name="ck_agent_turns_final_status",
+        ),
     )
-    op.execute("ALTER TABLE connected_accounts ALTER COLUMN connection_id SET DEFAULT gen_random_uuid()")
+    op.execute("ALTER TABLE agent_turns ALTER COLUMN turn_id SET DEFAULT gen_random_uuid()")
+    op.create_index("ix_agent_turns_user_created", "agent_turns", ["user_id", "created_at"])
+    op.create_index(
+        "ix_agent_turns_conversation_created",
+        "agent_turns",
+        ["conversation_id", "created_at"],
+    )
+    op.create_index("ix_agent_turns_selected_node", "agent_turns", ["selected_node"])
 
+
+def _create_node_runs() -> None:
+    op.create_table(
+        "node_runs",
+        sa.Column("node_run_id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("turn_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("user_id", sa.Text(), nullable=False),
+        sa.Column("node_name", sa.Text(), nullable=False),
+        sa.Column("input", postgresql.JSONB(), nullable=False),
+        sa.Column("output", postgresql.JSONB(), nullable=False),
+        sa.Column("status", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column("metadata", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.CheckConstraint(
+            "status IN ('completed', 'failed', 'skipped', 'rerouted', 'needs_clarification', "
+            "'needs_confirmation', 'safety_blocked')",
+            name="ck_node_runs_status",
+        ),
+    )
+    op.execute("ALTER TABLE node_runs ALTER COLUMN node_run_id SET DEFAULT gen_random_uuid()")
+    op.create_index("ix_node_runs_turn", "node_runs", ["turn_id"])
+    op.create_index("ix_node_runs_user_created", "node_runs", ["user_id", "created_at"])
+    op.create_index("ix_node_runs_node_name", "node_runs", ["node_name"])
+
+
+def _create_user_events() -> None:
     op.create_table(
         "user_events",
         sa.Column("event_id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("event_seq", sa.BigInteger(), sa.Identity(), unique=True, nullable=False),
         sa.Column("user_id", sa.Text(), nullable=False),
+        sa.Column("turn_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("event_type", sa.Text(), nullable=False),
         sa.Column("aggregate_type", sa.Text(), nullable=False),
         sa.Column("aggregate_id", sa.Text(), nullable=False),
@@ -95,12 +155,18 @@ def upgrade() -> None:
         sa.Column("schema_version", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("payload", postgresql.JSONB(), nullable=False),
         sa.Column("metadata", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.CheckConstraint("source IN ('user', 'system', 'import', 'migration', 'test')", name="ck_user_events_source"),
+        sa.CheckConstraint(
+            "source IN ('user', 'system', 'import', 'migration', 'test')",
+            name="ck_user_events_source",
+        ),
     )
     op.execute("ALTER TABLE user_events ALTER COLUMN event_id SET DEFAULT gen_random_uuid()")
     op.create_index("ix_user_events_user_seq", "user_events", ["user_id", "event_seq"])
+    op.create_index("ix_user_events_user_occurred_at", "user_events", ["user_id", "occurred_at"])
+    op.create_index("ix_user_events_user_recorded_at", "user_events", ["user_id", "recorded_at"])
     op.create_index("ix_user_events_type", "user_events", ["event_type"])
     op.create_index("ix_user_events_aggregate", "user_events", ["aggregate_type", "aggregate_id"])
+    op.create_index("ix_user_events_turn", "user_events", ["turn_id"])
     op.create_index("ix_user_events_payload_gin", "user_events", ["payload"], postgresql_using="gin")
     op.create_index(
         "ux_user_events_idempotency",
@@ -110,41 +176,14 @@ def upgrade() -> None:
         postgresql_where=sa.text("idempotency_key IS NOT NULL"),
     )
 
+
+def _create_projector_offsets() -> None:
     op.create_table(
         "projector_offsets",
         sa.Column("projector_name", sa.Text(), primary_key=True),
         sa.Column("last_event_seq", sa.BigInteger(), nullable=False, server_default="0"),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
     )
-
-    _create_projection_tables()
-    _create_planning_tables()
-    _create_clarification_and_evidence_tables()
-
-
-def downgrade() -> None:
-    op.drop_table("evidence_citations")
-    op.drop_index("ix_clarification_state_user_status", table_name="clarification_state")
-    op.drop_table("clarification_state")
-    op.drop_index("ix_plan_artifacts_user_created", table_name="plan_artifacts")
-    op.drop_table("plan_artifacts")
-    op.drop_table("plan_revisions")
-    op.drop_table("planning_sessions")
-    op.drop_table("planning_history_projection")
-    op.drop_table("nutrition_status_projection")
-    op.drop_table("constraint_projection")
-    op.drop_table("user_profile_projection")
-    op.drop_table("projector_offsets")
-    op.drop_index("ux_user_events_idempotency", table_name="user_events")
-    op.drop_index("ix_user_events_payload_gin", table_name="user_events")
-    op.drop_index("ix_user_events_aggregate", table_name="user_events")
-    op.drop_index("ix_user_events_type", table_name="user_events")
-    op.drop_index("ix_user_events_user_seq", table_name="user_events")
-    op.drop_table("user_events")
-    op.drop_table("connected_accounts")
-    op.drop_table("account_user_memberships")
-    op.drop_table("users")
-    op.drop_table("accounts")
 
 
 def _create_projection_tables() -> None:
@@ -190,81 +229,40 @@ def _create_projection_tables() -> None:
     )
 
 
-def _create_planning_tables() -> None:
+def _create_session_context_tables() -> None:
     op.create_table(
-        "planning_sessions",
-        sa.Column("session_id", postgresql.UUID(as_uuid=True), primary_key=True),
+        "conversation_state_summaries",
+        sa.Column("conversation_id", sa.Text(), primary_key=True),
         sa.Column("user_id", sa.Text(), nullable=False),
-        sa.Column("status", sa.Text(), nullable=False),
-        sa.Column("reason", sa.Text(), nullable=True),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("metadata", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.CheckConstraint("status IN ('active', 'completed', 'abandoned', 'canceled', 'error')", name="ck_planning_sessions_status"),
+        sa.Column("summary_version", sa.Text(), nullable=False),
+        sa.Column("summary", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column("should_inject_next_turn", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
     )
-    op.execute("ALTER TABLE planning_sessions ALTER COLUMN session_id SET DEFAULT gen_random_uuid()")
-    op.create_table(
-        "plan_revisions",
-        sa.Column("revision_id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("session_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("user_id", sa.Text(), nullable=False),
-        sa.Column("parent_revision_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("objectives", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")),
-        sa.Column("summary", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("metadata", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.ForeignKeyConstraint(["session_id"], ["planning_sessions.session_id"]),
+    op.create_index(
+        "ix_conversation_state_summaries_user_updated",
+        "conversation_state_summaries",
+        ["user_id", "updated_at"],
     )
-    op.execute("ALTER TABLE plan_revisions ALTER COLUMN revision_id SET DEFAULT gen_random_uuid()")
-    op.create_table(
-        "plan_artifacts",
-        sa.Column("artifact_id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("session_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("revision_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("user_id", sa.Text(), nullable=False),
-        sa.Column("artifact_type", sa.Text(), nullable=False),
-        sa.Column("artifact", postgresql.JSONB(), nullable=False),
-        sa.Column("validation", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.Column("status", sa.Text(), nullable=False, server_default="draft"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("metadata", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.CheckConstraint("status IN ('draft', 'accepted', 'rejected', 'superseded')", name="ck_plan_artifacts_status"),
-        sa.ForeignKeyConstraint(["session_id"], ["planning_sessions.session_id"]),
-        sa.ForeignKeyConstraint(["revision_id"], ["plan_revisions.revision_id"]),
-    )
-    op.execute("ALTER TABLE plan_artifacts ALTER COLUMN artifact_id SET DEFAULT gen_random_uuid()")
-    op.create_index("ix_plan_artifacts_user_created", "plan_artifacts", ["user_id", sa.text("created_at DESC")])
 
-
-def _create_clarification_and_evidence_tables() -> None:
     op.create_table(
-        "clarification_state",
-        sa.Column("clarification_id", postgresql.UUID(as_uuid=True), primary_key=True),
+        "pending_interaction_state",
+        sa.Column("conversation_id", sa.Text(), primary_key=True),
         sa.Column("user_id", sa.Text(), nullable=False),
-        sa.Column("status", sa.Text(), nullable=False),
-        sa.Column("blocked_node", sa.Text(), nullable=True),
-        sa.Column("blocked_action", sa.Text(), nullable=True),
-        sa.Column("missing_fields", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")),
-        sa.Column("question", sa.Text(), nullable=False),
-        sa.Column("expected_answer_type", sa.Text(), nullable=False),
-        sa.Column("answer", sa.Text(), nullable=True),
+        sa.Column("pending_kind", sa.Text(), nullable=False),
+        sa.Column("assistant_prompt", sa.Text(), nullable=False),
+        sa.Column("expected_user_response", sa.Text(), nullable=False),
+        sa.Column("resume_graph", sa.Text(), nullable=True),
         sa.Column("resume_node", sa.Text(), nullable=True),
-        sa.Column("resume_action", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("resolved_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("metadata", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.CheckConstraint("status IN ('open', 'resolved', 'canceled', 'superseded')", name="ck_clarification_state_status"),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.CheckConstraint(
+            "pending_kind IN ('question', 'confirmation', 'choice', 'proposal')",
+            name="ck_pending_interaction_state_kind",
+        ),
     )
-    op.execute("ALTER TABLE clarification_state ALTER COLUMN clarification_id SET DEFAULT gen_random_uuid()")
-    op.create_index("ix_clarification_state_user_status", "clarification_state", ["user_id", "status"])
-    op.create_table(
-        "evidence_citations",
-        sa.Column("citation_id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", sa.Text(), nullable=False),
-        sa.Column("evidence_id", sa.Text(), nullable=False),
-        sa.Column("source_type", sa.Text(), nullable=False),
-        sa.Column("citation_text", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("metadata", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
+    op.create_index(
+        "ix_pending_interaction_state_user_updated",
+        "pending_interaction_state",
+        ["user_id", "updated_at"],
     )
-    op.execute("ALTER TABLE evidence_citations ALTER COLUMN citation_id SET DEFAULT gen_random_uuid()")

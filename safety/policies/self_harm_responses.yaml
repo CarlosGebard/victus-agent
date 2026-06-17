@@ -1,7 +1,0 @@
-responses:
-  high:
-    mode: safety_triage
-    user_message: "Siento que estes pasando por esto. No puedo ayudar a hacerte dano. Si estas en peligro inmediato, llama a emergencias ahora. Si puedes, contacta a una persona de confianza y alejate de cualquier cosa con la que puedas lastimarte."
-  critical:
-    mode: emergency_support
-    user_message: "Lo siento, pero no puedo ayudar con eso. Si puedes hacerte dano ahora, llama a emergencias inmediatamente o ve a un lugar seguro con otra persona. Si estas en EE. UU. puedes llamar o enviar texto al 988. Si estas fuera de EE. UU., contacta a tu numero local de emergencias o una linea de crisis local."
