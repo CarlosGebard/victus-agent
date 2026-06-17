@@ -129,6 +129,7 @@ Builds from:
 - `meal.edited`
 - `meal.deleted`
 - `biometrics.logged`
+- `lifestyle_metric.logged`
 - `symptom.logged`
 - future weekly summary events
 

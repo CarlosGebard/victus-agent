@@ -68,3 +68,40 @@ Implement a V1 profile update classifier node that returns a validated `ProfileU
 
 - Heuristics are intentionally conservative and will not cover every phrasing in V1.
 - Without tests in this task, validation is limited to import/compile checks.
+
+# EventCaptureNode V1
+
+## Goal
+
+Implement a V1 event capture classifier node that returns a validated `EventCaptureDecision` for fast-changing user data.
+
+## Scope
+
+- Add the event capture node package under the existing `src/agent/nodes/` package layout.
+- Keep the node free of database writes, event emission, planning, goal changes, durable profile updates, scientific answers, and nutrition calculations.
+- Support meals, biometrics, lifestyle metrics, and symptoms.
+- Add the `lifestyle_metric.logged` event registry entry and update node documentation.
+
+## Assumptions
+
+- The repository package layout makes `src/agent/nodes/event_capture/` the smallest importable location.
+- Command handlers outside this node will consume decisions and emit events.
+- No tests are added for this task per request.
+
+## Steps
+
+1. Add schemas, prompts, skill manifest, and event mapping.
+2. Add deterministic policy helpers for reroutes, edit/delete ambiguity, biometrics, lifestyle metrics, meals, symptoms, and high-risk symptom detection.
+3. Add validators that enforce hard shape, action, event, safety, and no-invented-nutrition rules.
+4. Add a thin node wrapper that uses LLM output when configured and falls back to policy heuristics.
+5. Update event registry and Event Capture Node documentation.
+6. Run compile validation and focused smoke checks.
+
+## Validation
+
+- `uv run python -m compileall src/agent/nodes/event_capture`
+
+## Risks
+
+- Heuristics are intentionally conservative and will not cover every phrasing in V1.
+- Without tests in this task, validation is limited to compile and smoke checks.

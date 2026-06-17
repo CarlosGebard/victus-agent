@@ -85,6 +85,20 @@ type BiometricsLoggedPayload = {
 }
 ```
 
+### lifestyle_metric.logged
+
+```ts
+type LifestyleMetricLoggedPayload = {
+  metric_id: string
+  occurred_at: string
+  metric: "sleep_duration" | "water_intake" | "steps" | "stress" | "energy" | "hunger"
+  value?: number | string
+  unit?: string
+  raw_value_text?: string
+  source: "manual" | "wearable" | "import"
+}
+```
+
 ### symptom.logged
 
 ```ts

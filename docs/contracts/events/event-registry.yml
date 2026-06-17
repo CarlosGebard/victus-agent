@@ -51,6 +51,13 @@ events:
     projectors:
       - nutrition_status_projector
 
+  - event_type: lifestyle_metric.logged
+    aggregate_type: lifestyle_metric
+    owner_node: event_capture
+    payload_schema_version: 1
+    projectors:
+      - nutrition_status_projector
+
   - event_type: symptom.logged
     aggregate_type: symptom
     owner_node: event_capture

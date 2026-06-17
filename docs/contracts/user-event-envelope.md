@@ -68,6 +68,7 @@ meal.logged
 meal.edited
 meal.deleted
 biometrics.logged
+lifestyle_metric.logged
 symptom.logged
 restriction.added
 restriction.updated
