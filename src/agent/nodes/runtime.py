@@ -6,8 +6,8 @@ from agent.prompts.compose_response import (
     compose_response_user_prompt,
 )
 from application.ports.llm import LLMClient, LLMRequest
-from application.routing.normalizer import normalize_text
-from application.routing.router import IntentRouter
+from application.text import normalize_text
+from application.tools import list_tools
 
 
 def normalize_request(state: VictusGraphState) -> VictusGraphState:
@@ -96,45 +96,31 @@ def _allowed_safety() -> dict[str, object]:
         "matched_rules": [],
         "reason_codes": [],
         "blocked_tools": [],
-        "allowed_next_route": "IntentRouter",
+        "allowed_next_route": "ToolRegistry",
         "audit_required": False,
     }
 
 
-def route_intent(router: IntentRouter):
-    def node(state: VictusGraphState) -> VictusGraphState:
-        safety = state.get("safety", {})
-        allowed_next_route = safety.get("allowed_next_route")
-        if allowed_next_route in {"SafetyTriageRoute", "EmergencySupportResponse"}:
-            intent = {
-                "primary_intent": "risk_medical_unsafe",
-                "confidence": 1.0,
-                "target_node": allowed_next_route,
-                "subintents": list(safety.get("categories", [])),
-                "rationale": safety.get("decision", "safety"),
-            }
-            return _merge(state, intent=intent, node_name="route_intent")
+def tool_registry(state: VictusGraphState) -> VictusGraphState:
+    safety = state.get("safety", {})
+    if safety.get("status") == "blocked":
+        allowed_tools: list[str] = []
+        target_node = str(safety.get("allowed_next_route") or "SafetyTriageRoute")
+    else:
+        allowed_tools = [tool.name for tool in list_tools(visible_only=True)]
+        target_node = "ToolRegistry"
 
-        request = state.get("request", {})
-        text = str(request.get("working_text") or request.get("original_text", ""))
-        decision = router.route(text)
-        intent = {
-            "primary_intent": decision.intent_type or decision.decision,
-            "confidence": decision.confidence,
-            "target_node": decision.route,
-            "subintents": list(decision.secondary_intents),
-            "rationale": decision.decision,
-        }
-        if decision.requires_clarification and decision.clarification_question:
-            response = {
-                "mode": "clarification",
-                "user_message": decision.clarification_question,
-                "internal_notes": ["router requested clarification"],
-            }
-            return _merge(state, intent=intent, response=response, node_name="route_intent")
-        return _merge(state, intent=intent, node_name="route_intent")
-
-    return node
+    tool_context = dict(state.get("tool_context", {}))
+    tool_context["allowed_tools"] = allowed_tools
+    tool_context.setdefault("tool_results", [])
+    intent = {
+        "primary_intent": "tool_registry",
+        "confidence": 1.0,
+        "target_node": target_node,
+        "subintents": [],
+        "rationale": "tools_registered",
+    }
+    return _merge(state, tool_context=tool_context, intent=intent, node_name="tool_registry")
 
 
 def compose_response(*, llm_client: LLMClient | None = None, model: str | None = None):
@@ -223,7 +209,7 @@ def _blocked_response(reasons: list[str]) -> dict[str, object]:
 
 
 def _clean_request(request: dict[str, object]) -> dict[str, object]:
-    for key in ("raw_text", "normalized_text", "english_safety_text", "routing_query"):
+    for key in ("raw_text", "normalized_text", "english_safety_text", "tool_query"):
         request.pop(key, None)
     return request
 

@@ -54,4 +54,4 @@ class BootstrapContext(ContractModel):
     pending_interaction: PendingInteractionState | None = None
     recent_user_messages: list[str] = Field(default_factory=list)
     last_tool_summary: str | None = None
-    routing_query: str
+    tool_query: str

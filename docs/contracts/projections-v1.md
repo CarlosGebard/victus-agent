@@ -16,7 +16,7 @@ updated_at: 2026-06-12
 
 Defines the read models required by the V1 agent runtime.
 
-Projections are mutable and rebuildable. They exist to make planning and routing fast. They are not historical truth.
+Projections are mutable and rebuildable. They exist to make planning and tool execution fast. They are not historical truth.
 
 ## 2. UserProfileProjection
 

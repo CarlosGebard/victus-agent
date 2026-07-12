@@ -43,7 +43,7 @@ type VictusGraphStateV1 = {
       pending_interaction?: PendingInteractionState
       recent_user_messages: string[]
       last_tool_summary?: string
-      routing_query: string
+      tool_query: string
     }
     updated_summary?: ConversationStateSummary
   }
@@ -57,19 +57,14 @@ type VictusGraphStateV1 = {
     matched_rules?: string[]
     reason_codes?: string[]
     blocked_tools?: string[]
-    allowed_next_route?: "IntentRouter" | "SafetyTriageRoute" | "EmergencySupportResponse"
+    allowed_next_route?: "ToolRegistry" | "SafetyTriageRoute" | "EmergencySupportResponse"
     audit_required?: boolean
   }
 
   intent: {
     primary_intent?:
-      | "event_capture"
-      | "profile_update"
-      | "plan_intent"
-      | "evidence_answer"
-      | "clarification"
+      | "tool_registry"
       | "safety"
-      | "mixed"
       | "unknown"
     confidence?: number
     rationale?: string
@@ -142,7 +137,7 @@ type VictusGraphStateV1 = {
 
 - `SafetyPrecheckNode` writes `safety`.
 - `ContextBootstrapNode` writes `session_context.bootstrap` and updates `request.working_text` only when pending context or translation changes the active view.
-- `IntentRouterNode` writes `intent`.
+- `ToolRegistryNode` writes `tool_context.allowed_tools` and compatibility `intent` metadata.
 - Domain nodes write `tool_context`, `planning`, `evidence`, or `clarification`.
 - `ResponseComposer` writes `response`.
 - `SummaryAfterResponseNode` writes `session_context.updated_summary`.

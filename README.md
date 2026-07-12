@@ -1,68 +1,62 @@
 # victus-agent
 
-`victus-agent` is the runtime repository for the first production-oriented version of the Victus Lifestyle Agent.
+Runtime repository for the Victus agent prototype.
 
-The repository owns the agent spine: authenticated account context, LangGraph orchestration, safety prechecks, embedding-assisted intent routing, typed tool execution, immutable user events, PostgreSQL projections, planning artifacts, and evidence-facing adapter boundaries.
+The current codebase implements the agent spine, not the full nutrition product:
 
-This repository does not try to solve the full nutrition science problem in V1. It provides the stable runtime foundation required to test, learn, and iterate safely.
+- LangGraph orchestration
+- safety precheck and self-harm response path
+- compact session context
+- static tool registration
+- two typed tool handlers: `event_capture` and `profile_update`
+- local MCP stdio server for those tools
+- event, projection, session-context, and tool result models
+- PostgreSQL repositories and Alembic migrations under `ops/db/`
+- local CLI commands under `uv run victus ...`
+
+The source of truth for user history is the event store. Projections are rebuildable read
+models. LangGraph state is orchestration state only.
 
 ## Current Status
 
-Status: `draft / V1 implementation-ready documentation`
+Status: `prototype / runtime foundation`
 
-The expected next step is implementation by Codex or another coding agent using the four root documents as the source of truth:
+Implemented enough to validate graph shape, tool classification, MCP exposure, contracts,
+database repositories, and projection rebuild behavior. Not yet implemented as a complete
+end-to-end nutrition coach.
+
+Known gap: the test suite currently references a `safety` package that is not present in the
+working tree.
+
+## Repository Map
 
 ```text
-docs/000-SYSTEM-CONTEXT.md   -> why the repository exists and what it owns
-docs/100-ARCHITECTURE.md     -> how the system is shaped and how components interact
-docs/200-OPERATIONS.md       -> how to run, validate, debug, and recover the runtime
-docs/300-CONTRACTS.md        -> stable schemas, events, tables, states, and tool boundaries
+src/agent/            LangGraph graph, state, and nodes
+src/application/      config, ports, tools, MCP client, projection services
+src/domain/           pure models and contracts
+src/infrastructure/   database, repositories, LLM adapters
+src/victus_cli/       local operational CLI
+src/victus_mcp/       local MCP stdio server
+ops/db/               Alembic config and migrations
+ops/scripts/          helper scripts
+config/               runtime config
+docs/                 compact system documentation and contracts
+tests/                unit, contract, repository, CLI, graph, and MCP tests
 ```
 
-## V1 Scope
-
-V1 domain: nutrition and lifestyle support.
-
-The agent handles meals, biometrics, symptoms, restrictions, preferences, goals, diet-plan generation/revision, weekly nutrition review, and evidence questions. Training or workout details may appear only as context for nutrition decisions or safety triage; V1 does not generate workout programs.
-
-V1 should implement the minimum runtime capable of:
-
-- resolving account and user context from an authenticated request
-- running a LangGraph-based agent turn
-- applying safety prechecks before routing and mutation
-- routing user intent with embeddings plus deterministic thresholds
-- executing typed backend tools
-- appending immutable domain events
-- rebuilding projections from events
-- storing planning sessions, revisions, and artifacts
-- returning traceable responses with event references, route decisions, warnings, and tool results
-
-## Quick Start
-
-These commands define the expected developer interface. If the repository is empty, Codex should create these targets during the first implementation pass.
-
-```bash
-cp .env.example .env
-make install
-make db-up
-make db-migrate
-make seed-router
-make dev
-```
-
-Run the minimum validation suite:
-
-```bash
-uv run --extra test victus check
-```
-
-Useful validation commands:
+## Useful Commands
 
 ```bash
 uv run --extra test victus test
-uv run --extra test victus test tests/routing
+uv run --extra test victus test tests/agent
 uv run --extra test victus compile
 uv run --extra test victus check
+```
+
+Database and smoke commands:
+
+```bash
+docker compose up -d postgres
 uv run victus db-upgrade
 uv run victus db-current
 uv run victus smoke-event-store
@@ -71,42 +65,28 @@ uv run victus smoke-projectors
 uv run victus projections-rebuild local-smoke-user
 ```
 
+MCP commands:
+
+```bash
+uv run victus mcp-list-tools
+uv run victus mcp-call event_capture '{"user_id":"local-smoke-user","normalized_text":"hoy comi arroz"}'
+uv run victus-mcp
+```
+
+Graph visualization:
+
+```bash
+uv run victus graph-dev --no-browser --port 2024
+```
+
 ## Documentation
 
 Read in this order:
 
 1. [`docs/000-SYSTEM-CONTEXT.md`](docs/000-SYSTEM-CONTEXT.md)
 2. [`docs/100-ARCHITECTURE.md`](docs/100-ARCHITECTURE.md)
-3. [`docs/300-CONTRACTS.md`](docs/300-CONTRACTS.md)
-4. [`docs/200-OPERATIONS.md`](docs/200-OPERATIONS.md)
+3. [`docs/200-OPERATIONS.md`](docs/200-OPERATIONS.md)
+4. [`docs/300-CONTRACTS.md`](docs/300-CONTRACTS.md)
 
-## Repository Responsibilities
-
-This repository owns:
-
-- agent runtime orchestration
-- account/user context resolution for the agent
-- embedding-assisted intent routing
-- safety routing and blocking behavior
-- typed tool handlers
-- immutable event storage
-- projection rebuild logic
-- planning session and artifact persistence
-- runtime traces and operational validation
-- local LangGraph visualization through `uv run victus graph-dev`
-
-This repository does not own:
-
-- infrastructure provisioning
-- identity provider implementation
-- full food database normalization
-- scientific paper processing pipelines
-- final mobile application UI
-- external wearable provider behavior
-- medical diagnosis or treatment decisions
-
-## Non-Negotiable Rule
-
-The language model is never the source of truth.
-
-The source of truth is the event store. Projections are derived read models. LangGraph checkpoints are orchestration state only. Tools validate and execute commands. Safety policy decides whether an action is allowed. Evidence supports explanations but does not override safety or user constraints.
+Detailed contracts live under [`docs/contracts/`](docs/contracts/). Avoid adding new planning
+docs unless the current code or a stable contract changes.

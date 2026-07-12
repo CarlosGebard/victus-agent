@@ -7,23 +7,6 @@ import pytest
 from agent.graph import build_graph
 from application.ports.llm import LLMRequest, LLMResponse
 from domain.session_context.models import PendingInteractionState
-from application.routing.models import RouteDecision
-
-
-class StubRouter:
-    def __init__(self, route: str = "EventCaptureGraph") -> None:
-        self.route_name = route
-
-    def route(self, input_text: str) -> RouteDecision:
-        return RouteDecision(
-            router_version="test",
-            input_text=input_text,
-            normalized_text=input_text.lower(),
-            decision="route",
-            route=self.route_name,
-            intent_type="log_update_data",
-            confidence=0.9,
-        )
 
 
 class StubLLMClient:
@@ -76,19 +59,20 @@ class StubSessionContextRepository:
 
 
 def test_graph_routes_and_composes_deterministic_response() -> None:
-    graph = build_graph(router=StubRouter(), llm_client=StubLLMClient())
+    graph = build_graph(llm_client=StubLLMClient())
 
     result = asyncio.run(graph.ainvoke({"request": {"raw_text": "hoy comi arroz"}}))
 
     assert result["request"] == {"original_text": "hoy comi arroz", "working_text": "make me a plan"}
-    assert result["intent"]["target_node"] == "EventCaptureGraph"
+    assert result["intent"]["target_node"] == "ToolRegistry"
+    assert result["tool_context"]["allowed_tools"] == ["event_capture", "profile_update"]
     assert result["response"]["user_message"] == "llm response"
     assert result["audit"]["node_path"] == [
         "safety_precheck",
         "normalize_request",
         "context_bootstrap.translate_working_text",
         "context_bootstrap",
-        "route_intent",
+        "tool_registry",
         "compose_response",
         "summarize_after_response",
     ]
@@ -96,7 +80,7 @@ def test_graph_routes_and_composes_deterministic_response() -> None:
 
 def test_graph_composes_response_through_llm_port() -> None:
     llm_client = StubLLMClient()
-    graph = build_graph(router=StubRouter("PlanningSessionGraph"), llm_client=llm_client)
+    graph = build_graph(llm_client=llm_client)
 
     result = asyncio.run(graph.ainvoke({"request": {"raw_text": "hazme un plan"}}))
 
@@ -110,11 +94,9 @@ def test_graph_composes_response_through_llm_port() -> None:
     assert llm_client.requests[2].model == "litellm_proxy/gemini-flash-lite"
 
 
-def test_graph_bootstraps_pending_context_before_routing() -> None:
+def test_graph_bootstraps_pending_context_before_tool_registry() -> None:
     repository = StubSessionContextRepository()
-    router = StubRouter("PlanRevisionGraph")
     graph = build_graph(
-        router=router,
         session_context_repository=repository,
         llm_client=StubLLMClient(),
     )
@@ -131,13 +113,13 @@ def test_graph_bootstraps_pending_context_before_routing() -> None:
 
     assert "Pending interaction context" in result["request"]["working_text"]
     assert "move dinner to tomorrow" in result["request"]["working_text"]
-    assert result["session_context"]["updated_summary"].current_topic == "PlanRevisionGraph"
+    assert result["session_context"]["updated_summary"].current_topic == "ToolRegistry"
     assert repository.saved_summaries
     assert repository.cleared_pending == ["conversation-1"]
 
 
 def test_graph_routes_unsafe_llama_guard_result_to_safety_response() -> None:
-    graph = build_graph(router=StubRouter(), llm_client=StubLLMClient("unsafe\nS11"))
+    graph = build_graph(llm_client=StubLLMClient("unsafe\nS11"))
 
     result = asyncio.run(graph.ainvoke(
         {

@@ -47,7 +47,7 @@ def _context_bootstrap_sync(repository: SessionContextReader | None = None):
             conversation_id=conversation_id,
             summary=summary,
             pending_interaction=pending,
-            routing_query=working_text,
+            tool_query=working_text,
         )
         session_context = dict(state.get("session_context", {}))
         if conversation_id:

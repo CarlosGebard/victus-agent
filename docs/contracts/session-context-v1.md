@@ -62,7 +62,7 @@ type PendingInteractionState = {
 ## 4. Rules
 
 - The bootstrap node must prefer pending interaction state for short or referential user replies.
-- The router should receive a standalone routing query assembled from current text plus relevant session context.
+- Downstream tool selection should receive a standalone tool query assembled from current text plus relevant session context.
 - The summary-after-response node must write structured JSON only.
 - The current summary updater is deterministic; an LLM-backed updater may be added through `LLMClient` as long as it returns this schema.
 - Full chat history is a fallback, not the default.

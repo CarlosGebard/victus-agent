@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import json
 import subprocess
 import sys
+
+ALEMBIC_CONFIG = "ops/db/alembic.ini"
 
 
 def main() -> int:
@@ -20,6 +24,10 @@ def main() -> int:
         nargs=argparse.REMAINDER,
         help="Additional langgraph dev args.",
     )
+    subparsers.add_parser("mcp-list-tools", help="List tools exposed by the local Victus MCP server.")
+    mcp_call_parser = subparsers.add_parser("mcp-call", help="Call one local Victus MCP tool.")
+    mcp_call_parser.add_argument("tool_name")
+    mcp_call_parser.add_argument("arguments_json")
     subparsers.add_parser("db-upgrade", help="Run Alembic migrations to head.")
     subparsers.add_parser("db-current", help="Show current Alembic revision.")
     subparsers.add_parser("smoke-event-store", help="Append and replay one local test event.")
@@ -57,10 +65,14 @@ def main() -> int:
         return _run([sys.executable, "-m", "compileall", "src", "tests"])
     if args.command == "graph-dev":
         return _run(["langgraph", "dev", "--config", "langgraph.json", *args.langgraph_args])
+    if args.command == "mcp-list-tools":
+        return _mcp_list_tools()
+    if args.command == "mcp-call":
+        return _mcp_call(args.tool_name, args.arguments_json)
     if args.command == "db-upgrade":
-        return _run([sys.executable, "-m", "alembic", "upgrade", "head"])
+        return _run([sys.executable, "-m", "alembic", "-c", ALEMBIC_CONFIG, "upgrade", "head"])
     if args.command == "db-current":
-        return _run([sys.executable, "-m", "alembic", "current"])
+        return _run([sys.executable, "-m", "alembic", "-c", ALEMBIC_CONFIG, "current"])
     if args.command == "smoke-event-store":
         return _smoke_event_store()
     if args.command == "smoke-projections":
@@ -80,6 +92,31 @@ def main() -> int:
 
 def _run(command: list[str]) -> int:
     return subprocess.run(command, check=False).returncode
+
+
+def _mcp_list_tools() -> int:
+    from application.mcp import VictusMCPClient
+
+    tools = asyncio.run(VictusMCPClient().list_tools())
+    print(json.dumps(tools, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _mcp_call(tool_name: str, arguments_json: str) -> int:
+    from application.mcp import VictusMCPClient
+
+    try:
+        arguments = json.loads(arguments_json)
+    except json.JSONDecodeError as exc:
+        print(f"invalid arguments JSON: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(arguments, dict):
+        print("arguments JSON must be an object", file=sys.stderr)
+        return 2
+
+    result = asyncio.run(VictusMCPClient().call_tool(tool_name, arguments))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
 
 
 def _smoke_event_store() -> int:
@@ -136,8 +173,6 @@ def _self_harm_response(query: str) -> int:
     import json
 
     from agent.nodes.self_harm_response import self_harm_response
-    from safety.engine.safety_precheck import SafetyPrecheck
-    from safety.engine.schemas import SafetyPrecheckInput
 
     state = {
         "request": {
@@ -145,24 +180,7 @@ def _self_harm_response(query: str) -> int:
             "working_text": query,
         }
     }
-    result = SafetyPrecheck().check(
-        SafetyPrecheckInput(
-            original_text=query,
-            working_text=query,
-        )
-    )
-    state["safety"] = {
-        "status": "ok" if result.decision == "allow" else "blocked",
-        "reasons": result.reason_codes,
-        "decision": result.decision,
-        "severity": result.severity,
-        "categories": result.categories,
-        "matched_rules": result.matched_rules,
-        "reason_codes": result.reason_codes,
-        "blocked_tools": result.blocked_tools,
-        "allowed_next_route": result.allowed_next_route,
-        "audit_required": result.audit_required,
-    }
+    state["safety"] = _self_harm_safety_state(query)
     state = self_harm_response()(state)
     print(
         json.dumps(
@@ -175,6 +193,46 @@ def _self_harm_response(query: str) -> int:
         )
     )
     return 0
+
+
+def _self_harm_safety_state(query: str) -> dict[str, object]:
+    try:
+        from safety.engine.safety_precheck import SafetyPrecheck
+        from safety.engine.schemas import SafetyPrecheckInput
+    except ModuleNotFoundError:
+        text = query.lower()
+        is_self_harm = any(term in text for term in ["kill myself", "hurt myself", "suicide"])
+        return {
+            "status": "blocked" if is_self_harm else "ok",
+            "reasons": ["local_self_harm_keyword"] if is_self_harm else [],
+            "decision": "route_to_safety_triage" if is_self_harm else "allow",
+            "severity": "high" if is_self_harm else "none",
+            "categories": ["self_harm"] if is_self_harm else ["none"],
+            "matched_rules": [],
+            "reason_codes": ["local_self_harm_keyword"] if is_self_harm else [],
+            "blocked_tools": ["planning", "event_capture", "profile_update"] if is_self_harm else [],
+            "allowed_next_route": "SafetyTriageRoute" if is_self_harm else "ToolRegistry",
+            "audit_required": is_self_harm,
+        }
+
+    result = SafetyPrecheck().check(
+        SafetyPrecheckInput(
+            original_text=query,
+            working_text=query,
+        )
+    )
+    return {
+        "status": "ok" if result.decision == "allow" else "blocked",
+        "reasons": result.reason_codes,
+        "decision": result.decision,
+        "severity": result.severity,
+        "categories": result.categories,
+        "matched_rules": result.matched_rules,
+        "reason_codes": result.reason_codes,
+        "blocked_tools": result.blocked_tools,
+        "allowed_next_route": result.allowed_next_route,
+        "audit_required": result.audit_required,
+    }
 
 
 def _safety_check(query: str, *, max_new_tokens: int = 64) -> int:

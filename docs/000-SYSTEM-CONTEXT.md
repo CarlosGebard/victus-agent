@@ -1,132 +1,82 @@
 ---
 id: VICTUS-AGENT-SYSTEM-CONTEXT
 title: Victus Agent System Context
-status: draft
-updated_at: 2026-06-12
+status: current
+updated_at: 2026-07-12
 owners:
   - victus-agent-runtime
 ---
 
 # Victus Agent System Context
 
-## 1. Purpose
+## Purpose
 
-`victus-agent` exists to implement the runtime spine of the Victus Lifestyle Agent.
+`victus-agent` is the runtime foundation for a future Victus lifestyle agent.
 
-The repository turns nutrition and lifestyle user messages into safe, typed, traceable actions: log nutrition events, update profile context, manage goals, create or revise diet plans, answer evidence questions, and ask clarifying questions when the request is incomplete.
+Today it provides a small, testable spine:
 
-The repository is designed for production-oriented development. It must support account-aware execution, deterministic persistence, recoverable projections, typed tools, safety routing, observability, and embedding-assisted intent routing.
+- normalize and carry a user request through a LangGraph graph
+- run a safety precheck before tool exposure
+- preserve compact session context
+- expose typed backend tools through a static registry
+- expose those tools through a local MCP stdio server
+- model immutable user events and rebuildable projections
+- provide local CLI and database smoke checks
 
-## 2. System Goals
+It is not yet a complete nutrition planner, evidence system, mobile API, or production auth
+boundary.
 
-The system is guided by these goals:
+## Current Scope
 
-- preserve user history as immutable domain events
-- derive fast user context through projections
-- keep account identity separate from nutrition profile identity
-- use LangGraph for orchestration, not as the canonical database
-- use embeddings to route multilingual user requests before expensive reasoning
-- expose tools through typed contracts and common result envelopes
-- block unsafe requests before mutation or recommendation
-- make every important action auditable through request, route, event, and tool execution records
-- keep V1 small enough to implement and test quickly
+Implemented scope:
 
-### Non-Goals
+- graph nodes: safety precheck, request normalization, context bootstrap, tool registry,
+  deterministic/LLM response composition, self-harm response, session summary
+- tools: `event_capture`, `profile_update`
+- persistence support: event store repository, projection repository, session context repository
+- operations: Alembic migrations, projection rebuild, smoke commands, MCP list/call commands
 
-V1 does not own the full food knowledge base, workout programming, final evidence RAG quality, wearable synchronization, full clinical decision support, billing, or mobile UI.
+Out of current scope:
 
-## 3. Repository Scope
+- full diet-plan generation
+- plan revision workflows
+- weekly review
+- evidence/RAG answers
+- semantic intent router
+- production API and auth provider integration
+- wearable/provider sync
+- medical diagnosis or treatment
 
-This repository owns the agent runtime layer.
-
-It owns:
-
-- authenticated request handling at the application boundary
-- account and user context resolution
-- LangGraph graph definition and node orchestration
-- safety precheck and safety triage routing
-- embedding-assisted intent routing
-- typed tool registry and backend tool handlers
-- immutable event append behavior
-- PostgreSQL projection rebuild behavior
-- planning session, revision, and artifact persistence
-- clarification state management
-- evidence adapter interfaces for search and support attachment
-- runtime logs, traces, and smoke validation
-
-It intentionally does not own:
-
-- infrastructure provisioning; that belongs in `victus-infra`
-- full scientific evidence processing; that belongs in the evidence/paper processing system
-- external identity provider internals
-- provider token custody beyond storing safe references
-- final consumer UI
-- medical diagnosis
-
-## 4. Documentation Map
-
-```text
-README.md                    -> human onboarding and repository entrypoint
-docs/000-SYSTEM-CONTEXT.md   -> purpose, boundaries, terminology, design principles
-docs/100-ARCHITECTURE.md     -> system shape, components, flows, dependencies
-docs/200-OPERATIONS.md       -> runtime workflows, configuration, observability, recovery
-docs/300-CONTRACTS.md        -> schemas, events, route contracts, database tables, tool rules
-```
-
-Codex should treat `300-CONTRACTS.md` as the strongest source of implementation truth.
-
-## 5. Core Concepts
+## Core Concepts
 
 | Concept | Meaning |
 |---|---|
-| Account | Authenticated login identity. One account may later access one or more user profiles. |
-| User | Nutrition/lifestyle subject that Victus reasons about. V1 may be 1:1 with an account, but the concepts must remain separate. |
-| Auth Context | Request-time identity object derived from the authentication provider. |
-| Request Context | Per-turn runtime context containing request id, account id, user id, locale, timezone, trace id, and raw input. |
-| Event Store | Append-only PostgreSQL table containing immutable domain events. |
-| Domain Event | Historical fact that something happened, such as `meal.logged`, `goal.set`, or `plan.artifact_saved`. |
-| Projection | Current read model derived from events. Projections are rebuildable and must not be manually mutated by agent nodes. |
-| LangGraph State | Temporary orchestration state for one agent run. It is not canonical user history. |
-| Tool Handler | Backend function with typed input, validation, safety class, event emission rules, and common result envelope. |
-| Intent Router | Hybrid router that combines rules, embeddings, thresholds, and optional LLM fallback to select the next graph. |
-| Router Embedding Index | Versioned set of route examples embedded into a vector store for semantic intent matching. |
-| Safety Guard | Policy layer that blocks or redirects risky medical, unsafe, or unsupported requests. |
-| Planning Artifact | Versioned plan output generated from current projections, constraints, goal context, and optional evidence support. |
-| Evidence Adapter | Interface to search or attach evidence. It supports explanations; it does not override safety or constraints. |
+| User event | Immutable fact about a user. This is the historical source of truth. |
+| Projection | Rebuildable read model derived from events. |
+| LangGraph state | Temporary orchestration state for a single graph run. |
+| Session context | Compact conversation memory, not domain truth. |
+| Tool registry | Static list of tools allowed after safety precheck. |
+| Tool handler | Typed backend classifier/handler that validates input and returns `ToolResult`. |
+| MCP server | Local stdio boundary exposing the same tool surface to MCP clients. |
 
-## 6. Expected Repository Structure
+## Design Rules
+
+- The LLM is never the source of truth.
+- Do not write directly to projections from agent nodes.
+- Do not derive identity from free text.
+- Do not expose mutating tools when safety blocks the turn.
+- Prefer typed tool handlers over model-generated side effects.
+- Keep docs tied to current code or stable contracts.
+
+## Documentation Map
 
 ```text
-src/agent/            -> LangGraph graph, state, and orchestration nodes
-src/application/      -> ports, config, routing, and application services
-src/domain/           -> domain contracts, event models, projections, tools, session context models
-src/infrastructure/   -> database schema/engine, repositories, and provider adapters
-src/victus_cli/       -> local operational CLI
-config/               -> route config, safety config, environment defaults
-safety/               -> declarative safety rules, policies, offline datasets, and eval utilities
-ops/                  -> operational helper scripts
-tests/                -> unit, integration, contract, and smoke tests
+README.md                  repository entrypoint
+docs/000-SYSTEM-CONTEXT.md purpose, scope, concepts
+docs/100-ARCHITECTURE.md   implemented runtime shape
+docs/200-OPERATIONS.md     local commands and validation
+docs/300-CONTRACTS.md      active contracts and compatibility notes
+docs/contracts/            detailed schema/model references
+docs/adr/                  decisions that still matter
+docs/runbooks/             operational runbooks
 ```
-
-This is the expected shape. Codex may adjust implementation details, but it must preserve the ownership boundaries.
-
-## 7. Design Principles
-
-The system should remain contract-first, account-aware, event-driven, projection-oriented, safety-first, multilingual, observable, idempotent, and easy to rebuild.
-
-Important rules:
-
-- Never let the LLM write directly to projection tables.
-- Never store provider access tokens in plain PostgreSQL fields.
-- Never derive account identity from free-text user input.
-- Never treat router embeddings as final truth when confidence is low.
-- Never route unsafe requests directly into planning or event mutation.
-- Prefer append-only correction events over destructive mutation.
-- Prefer typed tool handlers over raw model-generated side effects.
-- Prefer small, testable runtime slices over a large unvalidated agent.
-
-## 8. V1 Implementation North Star
-
-A successful V1 is not a perfect nutrition coach.
-
-A successful V1 is a reliable agent skeleton that can receive an authenticated message, resolve the correct user profile, classify the intent with an embedding-assisted router, run the correct graph branch, execute validated tools, persist immutable events, update projections, and return a traceable response.

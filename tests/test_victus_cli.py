@@ -18,10 +18,10 @@ def test_cli_test_runs_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
         return CompletedProcess(0)
 
     monkeypatch.setattr(victus_cli_main_module.subprocess, "run", run)
-    monkeypatch.setattr(sys, "argv", ["victus", "test", "tests/routing"])
+    monkeypatch.setattr(sys, "argv", ["victus", "test", "tests/agent"])
 
     assert cli_main() == 0
-    assert calls == [[sys.executable, "-m", "pytest", "tests/routing"]]
+    assert calls == [[sys.executable, "-m", "pytest", "tests/agent"]]
 
 
 def test_cli_check_stops_when_tests_fail(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -49,7 +49,7 @@ def test_cli_db_upgrade_runs_alembic(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "argv", ["victus", "db-upgrade"])
 
     assert cli_main() == 0
-    assert calls == [[sys.executable, "-m", "alembic", "upgrade", "head"]]
+    assert calls == [[sys.executable, "-m", "alembic", "-c", "ops/db/alembic.ini", "upgrade", "head"]]
 
 
 def test_cli_db_current_runs_alembic(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -63,7 +63,7 @@ def test_cli_db_current_runs_alembic(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "argv", ["victus", "db-current"])
 
     assert cli_main() == 0
-    assert calls == [[sys.executable, "-m", "alembic", "current"]]
+    assert calls == [[sys.executable, "-m", "alembic", "-c", "ops/db/alembic.ini", "current"]]
 
 
 def test_cli_projection_rebuild_uses_direct_handler(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,6 +78,13 @@ def test_cli_projection_rebuild_uses_direct_handler(monkeypatch: pytest.MonkeyPa
 
     assert cli_main() == 0
     assert calls == ["user-1"]
+
+
+def test_cli_mcp_call_rejects_invalid_json(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    monkeypatch.setattr(sys, "argv", ["victus", "mcp-call", "event_capture", "not-json"])
+
+    assert cli_main() == 2
+    assert "invalid arguments JSON" in capsys.readouterr().err
 
 
 def test_cli_self_harm_response_prints_json(monkeypatch: pytest.MonkeyPatch, capsys) -> None:

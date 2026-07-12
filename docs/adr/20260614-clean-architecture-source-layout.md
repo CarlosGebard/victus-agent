@@ -9,7 +9,7 @@ owners:
 
 # Context
 
-The repository is early and had several root-level packages mixing domain contracts, routing services, persistence adapters, and orchestration code.
+The repository is early and had several root-level packages mixing domain contracts, tool-selection services, persistence adapters, and orchestration code.
 
 That layout made it harder to see dependency direction as new modules such as session context were added.
 
@@ -19,13 +19,13 @@ Organize `src` by architectural layer:
 
 ```text
 src/domain/             -> domain contracts and pure models
-src/application/        -> ports, config, routing, and application services
+src/application/        -> ports, config, text helpers, and application services
 src/infrastructure/     -> database, repositories, and provider adapters
 src/agent/              -> LangGraph orchestration
 src/victus_cli/         -> local operational CLI
 ```
 
-Routing now lives under `application.routing`.
+Tool-selection support now lives in the agent runtime and application helper layers.
 
 PostgreSQL schema, engine, and repositories live under `infrastructure`.
 

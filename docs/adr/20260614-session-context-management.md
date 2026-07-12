@@ -20,7 +20,7 @@ Add explicit session context made of:
 - `ConversationStateSummary`: compact structured memory for the next turn
 - `PendingInteractionState`: active user-response dependency when the assistant asks a question, proposes an action, or waits for confirmation
 
-The graph now bootstraps session context before safety/routing and updates the summary after response composition.
+The graph now bootstraps session context before safety/tool registration and updates the summary after response composition.
 
 Preferred context order:
 
