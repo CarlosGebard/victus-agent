@@ -40,15 +40,9 @@ def main() -> int:
     self_harm_parser.add_argument("query", help="English user query to evaluate.")
     safety_check_parser = subparsers.add_parser(
         "safety-check",
-        help="Run one prompt against the configured local Llama Guard safety model.",
+        help="Classify one prompt with Llama Guard through Hugging Face Router.",
     )
     safety_check_parser.add_argument("query", help="User prompt to evaluate.")
-    safety_check_parser.add_argument(
-        "--max-new-tokens",
-        type=int,
-        default=64,
-        help="Maximum tokens to generate from the local guard model.",
-    )
     rebuild_parser = subparsers.add_parser("projections-rebuild", help="Rebuild projections for a user.")
     rebuild_parser.add_argument("user_id")
 
@@ -82,7 +76,7 @@ def main() -> int:
     if args.command == "self-harm-response":
         return _self_harm_response(args.query)
     if args.command == "safety-check":
-        return _safety_check(args.query, max_new_tokens=args.max_new_tokens)
+        return _safety_check(args.query)
     if args.command == "projections-rebuild":
         return _projections_rebuild(args.user_id)
 
@@ -235,30 +229,35 @@ def _self_harm_safety_state(query: str) -> dict[str, object]:
     }
 
 
-def _safety_check(query: str, *, max_new_tokens: int = 64) -> int:
+def _safety_check(query: str) -> int:
     import json
 
-    from agent.nodes.runtime import _llama_guard_prompt, _safety_from_llama_guard
+    from agent.nodes.runtime import _safety_from_llama_guard
     from application.config import load_runtime_config
-    from infrastructure.llm.local_llama_guard import LocalLlamaGuardClient
+    from infrastructure.llm.hugging_face_endpoint import (
+        HuggingFaceRouterClient,
+        hugging_face_router_base_url_from_env,
+        hugging_face_token_from_env,
+    )
 
     config = load_runtime_config()
-    prompt = _llama_guard_prompt(query)
     try:
-        response = LocalLlamaGuardClient(config.safety.model).complete(
-            prompt,
-            max_new_tokens=max_new_tokens,
-        )
+        response = HuggingFaceRouterClient(
+            base_url=hugging_face_router_base_url_from_env(),
+            token=hugging_face_token_from_env(),
+        ).complete_guard(model=config.safety.model, user_text=query)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    safety = _safety_from_llama_guard(response.text)
     print(
         json.dumps(
             {
                 "model": config.safety.model,
-                "prompt": prompt,
+                "source": "hugging_face_router",
+                "input": query,
                 "raw_response": response.text,
-                "safety": _safety_from_llama_guard(response.text),
+                "safety": safety,
                 "raw": response.raw,
             },
             ensure_ascii=False,

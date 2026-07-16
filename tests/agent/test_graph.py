@@ -2,143 +2,58 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from agent.graph import build_graph
 from application.ports.llm import LLMRequest, LLMResponse
-from domain.session_context.models import PendingInteractionState
 
 
-class StubLLMClient:
-    def __init__(self, safety_response: str = "safe") -> None:
-        self.requests: list[LLMRequest] = []
-        self.safety_response = safety_response
-
-    def complete(self, request: LLMRequest) -> LLMResponse:
-        self.requests.append(request)
-        if request.operation == "agent.safety_precheck.llama_guard":
-            return LLMResponse(text=self.safety_response)
-        return LLMResponse(text="sync")
-
-    async def acomplete(self, request: LLMRequest) -> LLMResponse:
-        self.requests.append(request)
-        if request.operation == "agent.context_bootstrap.translate_normalized_text":
-            return LLMResponse(text="make me a plan")
-        return LLMResponse(text="llm response")
-
-
-class StubSessionContextRepository:
-    def __init__(self) -> None:
-        self.saved_summaries = []
-        self.cleared_pending = []
-
-    def get_latest_summary(self, conversation_id: str):
-        return None
-
-    def get_pending_interaction(self, conversation_id: str):
-        return PendingInteractionState(
-            conversation_id=conversation_id,
-            user_id="user-1",
-            pending_kind="confirmation",
-            assistant_prompt="Do you want to move dinner to tomorrow?",
-            expected_user_response="yes_no",
-            resume_graph="PlanRevisionGraph",
-            resume_node="apply_plan_adjustment",
-            created_at="2026-06-14T00:00:00+00:00",
-            updated_at="2026-06-14T00:00:00+00:00",
-        )
-
-    def save_summary(self, summary):
-        self.saved_summaries.append(summary)
-
-    def save_pending_interaction(self, pending):
-        raise AssertionError("no pending interaction should be saved for final responses")
-
-    def clear_pending_interaction(self, conversation_id: str):
-        self.cleared_pending.append(conversation_id)
-
-
-def test_graph_routes_and_composes_deterministic_response() -> None:
-    graph = build_graph(llm_client=StubLLMClient())
+def test_graph_runs_only_event_capture_node_for_meal_input() -> None:
+    graph = build_graph()
 
     result = asyncio.run(graph.ainvoke({"request": {"raw_text": "hoy comi arroz"}}))
 
-    assert result["request"] == {"original_text": "hoy comi arroz", "working_text": "make me a plan"}
-    assert result["intent"]["target_node"] == "ToolRegistry"
-    assert result["tool_context"]["allowed_tools"] == ["event_capture", "profile_update"]
-    assert result["response"]["user_message"] == "llm response"
-    assert result["audit"]["node_path"] == [
-        "safety_precheck",
-        "normalize_request",
-        "context_bootstrap.translate_working_text",
-        "context_bootstrap",
-        "tool_registry",
-        "compose_response",
-        "summarize_after_response",
-    ]
+    assert result["request"] == {
+        "original_text": "hoy comi arroz",
+        "working_text": "hoy comi arroz",
+    }
+    assert result["intent"]["target_node"] == "event_capture"
+    assert result["tool_context"]["last_tool_result"]["tool_name"] == "event_capture"
+    assert result["tool_context"]["last_tool_result"]["data"]["capture_action"] == "log_meal"
+    assert result["audit"]["node_path"] == ["normalize_request", "safety_precheck", "event_capture"]
 
 
-def test_graph_composes_response_through_llm_port() -> None:
-    llm_client = StubLLMClient()
-    graph = build_graph(llm_client=llm_client)
+def test_graph_event_capture_reroutes_non_capture_input() -> None:
+    graph = build_graph()
 
     result = asyncio.run(graph.ainvoke({"request": {"raw_text": "hazme un plan"}}))
 
-    assert result["response"]["user_message"] == "llm response"
-    assert result["request"]["working_text"] == "make me a plan"
-    assert llm_client.requests[0].operation == "agent.safety_precheck.llama_guard"
-    assert llm_client.requests[0].model == "meta-llama/Llama-Guard-3-1B"
-    assert llm_client.requests[1].operation == "agent.context_bootstrap.translate_normalized_text"
-    assert llm_client.requests[1].model == "groq/llama-3.1-8b-instant"
-    assert llm_client.requests[2].operation == "agent.compose_response"
-    assert llm_client.requests[2].model == "litellm_proxy/gemini-flash-lite"
+    data = result["tool_context"]["last_tool_result"]["data"]
+    assert data["capture_action"] == "reroute"
+    assert data["selected_skill"] == "none"
+    assert result["audit"]["node_path"] == ["normalize_request", "safety_precheck", "event_capture"]
 
 
-def test_graph_bootstraps_pending_context_before_tool_registry() -> None:
-    repository = StubSessionContextRepository()
-    graph = build_graph(
-        session_context_repository=repository,
-        llm_client=StubLLMClient(),
-    )
+def test_graph_routes_blocked_safety_to_warning_response_without_tools() -> None:
+    graph = build_graph(llm_client=BlockedSafetyClient())
 
-    result = asyncio.run(graph.ainvoke(
-        {
-            "request": {
-                "raw_text": "si, mañana",
-                "user_id": "user-1",
-                "conversation_id": "conversation-1",
-            }
-        }
-    ))
+    result = asyncio.run(graph.ainvoke({"request": {"raw_text": "I am going to hurt myself"}}))
 
-    assert "Pending interaction context" in result["request"]["working_text"]
-    assert "move dinner to tomorrow" in result["request"]["working_text"]
-    assert result["session_context"]["updated_summary"].current_topic == "ToolRegistry"
-    assert repository.saved_summaries
-    assert repository.cleared_pending == ["conversation-1"]
-
-
-def test_graph_routes_unsafe_llama_guard_result_to_safety_response() -> None:
-    graph = build_graph(llm_client=StubLLMClient("unsafe\nS11"))
-
-    result = asyncio.run(graph.ainvoke(
-        {
-            "request": {
-                "original_text": "necesito ayuda",
-                "working_text": "i want to kill myself",
-            }
-        }
-    ))
-
-    assert result["safety"]["decision"] == "route_to_safety_triage"
+    assert result["safety"]["status"] == "blocked"
     assert result["safety"]["categories"] == ["self_harm"]
-    assert result["safety"]["reason_codes"] == ["llama_guard_unsafe"]
-    assert result["response"]["mode"] == "safety_triage"
+    assert result["intent"]["target_node"] == "safety_blocked_response"
+    assert result["response"]["mode"] == "blocked"
+    assert result["tool_context"]["allowed_tools"] == []
+    assert "last_tool_result" not in result["tool_context"]
     assert result["audit"]["node_path"] == [
-        "safety_precheck",
         "normalize_request",
-        "context_bootstrap.translate_working_text",
-        "context_bootstrap",
-        "self_harm_response",
-        "summarize_after_response",
+        "safety_precheck",
+        "safety_blocked_response",
     ]
+
+
+class BlockedSafetyClient:
+    def complete(self, request: LLMRequest) -> LLMResponse:
+        assert request.operation == "agent.safety_precheck.llama_guard"
+        return LLMResponse(text="unsafe\nS11")
+
+    async def acomplete(self, request: LLMRequest) -> LLMResponse:
+        raise AssertionError("blocked safety graph path should not call async completion")

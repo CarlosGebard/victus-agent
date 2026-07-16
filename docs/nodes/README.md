@@ -5,17 +5,17 @@ This directory intentionally keeps only a compact node map.
 Detailed node contracts were removed because they described future behavior more than current
 runtime behavior. Use the code and root architecture document as the active source of truth.
 
-## Implemented Graph Nodes
+## Active Graph Nodes
 
-Implemented in `src/agent/`:
+Currently wired into `src/agent/graph.py`:
 
-- `safety_precheck`
 - `normalize_request`
-- `context_bootstrap`
-- `self_harm_response`
-- `tool_registry`
-- `compose_response`
-- `summarize_after_response`
+- `safety_precheck`
+- `safety_blocked_response`
+- `event_capture`
+
+Allowed requests continue to `event_capture`. Blocked requests stop at `safety_blocked_response`
+and expose no tools.
 
 ## Implemented Tool Classifiers
 

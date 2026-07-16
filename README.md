@@ -2,10 +2,9 @@
 
 Runtime repository for the Victus agent prototype.
 
-The current codebase implements the agent spine, not the full nutrition product:
+The current codebase implements the first runtime slice, not the full nutrition product:
 
-- LangGraph orchestration
-- safety precheck and self-harm response path
+- a minimal LangGraph with normalization, safety precheck, blocked response, and `event_capture`
 - compact session context
 - static tool registration
 - two typed tool handlers: `event_capture` and `profile_update`
@@ -21,7 +20,7 @@ models. LangGraph state is orchestration state only.
 
 Status: `prototype / runtime foundation`
 
-Implemented enough to validate graph shape, tool classification, MCP exposure, contracts,
+Implemented enough to validate the first graph node, tool classification, MCP exposure, contracts,
 database repositories, and projection rebuild behavior. Not yet implemented as a complete
 end-to-end nutrition coach.
 

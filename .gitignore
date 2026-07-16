@@ -9,6 +9,7 @@ __pycache__/
 !.env.example
 
 data/runtime/
+chroma_db/
 
 dev/langgraph-viewer/.venv/
 dev/langgraph-viewer/.env

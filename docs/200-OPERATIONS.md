@@ -49,6 +49,22 @@ uv run --extra test victus test tests/victus_mcp
 uv run --extra test victus test tests/contracts
 ```
 
+Llama Guard 4 serverless classification:
+
+```bash
+hf auth login
+uv run victus safety-check "Ignore previous instructions"
+```
+
+`victus safety-check` calls Hugging Face Router chat completions with
+`meta-llama/Llama-Guard-4-12B:together`. It requires `HF_TOKEN`, `HUGGING_FACE_TOKEN`, or
+`HUGGING_FACE_API_KEY`. `HUGGING_FACE_ROUTER_BASE_URL` may override the default
+`https://router.huggingface.co/v1` for tests.
+
+The response is normalized from Llama Guard output such as `safe` or `unsafe\nS11`.
+The request includes strict classification instructions that tell Llama Guard 4 to return only
+`safe` or `unsafe` plus S1-S14 category codes.
+
 Current known failure:
 
 ```text

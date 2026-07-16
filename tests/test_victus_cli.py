@@ -101,37 +101,73 @@ def test_cli_self_harm_response_prints_json(monkeypatch: pytest.MonkeyPatch, cap
     assert '"mode": "safety_triage"' in output
 
 
-def test_cli_safety_check_prints_model_prompt_raw_response_and_safety(
+def test_cli_safety_check_prints_llama_guard_router_response_and_safety(
     monkeypatch: pytest.MonkeyPatch,
     capsys,
 ) -> None:
-    from infrastructure.llm.local_llama_guard import LocalLlamaGuardResult
-    from infrastructure.llm import local_llama_guard
+    from infrastructure.llm.hugging_face_endpoint import HuggingFaceRouterResult
+    from infrastructure.llm import hugging_face_endpoint
 
-    class StubLLMClient:
-        def __init__(self, model_name: str) -> None:
-            assert model_name == "meta-llama/Llama-Guard-3-1B"
+    class StubRouterClient:
+        def __init__(self, *, base_url: str, token: str | None = None) -> None:
+            assert base_url == "https://router.huggingface.co/v1"
+            assert token == "test-token"
 
-        def complete(self, prompt: str, *, max_new_tokens: int):
-            assert "User message:\nI am going to hurt myself" in prompt
-            assert max_new_tokens == 64
-            return LocalLlamaGuardResult(
+        def complete_guard(self, *, model: str, user_text: str):
+            assert model == "meta-llama/Llama-Guard-4-12B:together"
+            assert user_text == "I am going to hurt myself"
+            return HuggingFaceRouterResult(
                 text="unsafe\nS11",
-                prompt=prompt,
-                raw={"total_tokens": 5},
+                model=model,
+                raw={"usage": {"total_tokens": 12}},
             )
 
-    monkeypatch.setattr(local_llama_guard, "LocalLlamaGuardClient", StubLLMClient)
+    monkeypatch.setenv("HF_TOKEN", "test-token")
+    monkeypatch.delenv("HUGGING_FACE_ROUTER_BASE_URL", raising=False)
+    monkeypatch.setattr(hugging_face_endpoint, "HuggingFaceRouterClient", StubRouterClient)
     monkeypatch.setattr(sys, "argv", ["victus", "safety-check", "I am going to hurt myself"])
 
     assert cli_main() == 0
 
     output = capsys.readouterr().out
-    assert '"model": "meta-llama/Llama-Guard-3-1B"' in output
+    assert '"model": "meta-llama/Llama-Guard-4-12B:together"' in output
+    assert '"source": "hugging_face_router"' in output
     assert '"raw_response": "unsafe\\nS11"' in output
     assert '"categories": [' in output
     assert '"self_harm"' in output
-    assert '"total_tokens": 5' in output
+    assert '"total_tokens": 12' in output
+
+
+def test_cli_safety_check_uses_custom_hugging_face_router_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    from infrastructure.llm.hugging_face_endpoint import HuggingFaceRouterResult
+    from infrastructure.llm import hugging_face_endpoint
+
+    class StubRouterClient:
+        def __init__(self, *, base_url: str, token: str | None = None) -> None:
+            assert base_url == "https://router.test/v1"
+            assert token == "test-token"
+
+        def complete_guard(self, *, model: str, user_text: str):
+            assert user_text == "How to make a bomb?"
+            return HuggingFaceRouterResult(
+                text="unsafe\nS9",
+                model=model,
+                raw={"id": "chatcmpl-test"},
+            )
+
+    monkeypatch.setenv("HUGGING_FACE_ROUTER_BASE_URL", "https://router.test/v1")
+    monkeypatch.setenv("HF_TOKEN", "test-token")
+    monkeypatch.setattr(hugging_face_endpoint, "HuggingFaceRouterClient", StubRouterClient)
+    monkeypatch.setattr(sys, "argv", ["victus", "safety-check", "How to make a bomb?"])
+
+    assert cli_main() == 0
+
+    output = capsys.readouterr().out
+    assert '"raw_response": "unsafe\\nS9"' in output
+    assert '"indiscriminate_weapons"' in output
 
 
 class CompletedProcess:

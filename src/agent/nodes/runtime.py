@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from agent.state import VictusGraphState
 from agent.prompts.compose_response import (
     COMPOSE_RESPONSE_SYSTEM_PROMPT,
@@ -70,20 +72,71 @@ def _llama_guard_prompt(user_text: str) -> str:
 def _safety_from_llama_guard(output: str) -> dict[str, object]:
     normalized = output.strip().lower()
     if normalized.startswith("unsafe"):
-        categories = ["self_harm"] if "s11" in normalized or "self-harm" in normalized else ["unsafe"]
+        categories = _llama_guard_categories(normalized)
+        reason_codes = [f"llama_guard_{category}" for category in categories]
         return {
             "status": "blocked",
-            "reasons": ["llama_guard_unsafe"],
+            "reasons": reason_codes,
             "decision": "route_to_safety_triage",
             "severity": "high",
             "categories": categories,
             "matched_rules": [],
-            "reason_codes": ["llama_guard_unsafe"],
+            "reason_codes": reason_codes,
             "blocked_tools": ["planning", "event_capture", "profile_update"],
             "allowed_next_route": "SafetyTriageRoute",
             "audit_required": True,
         }
     return _allowed_safety()
+
+
+def _llama_guard_categories(normalized_output: str) -> list[str]:
+    categories_by_code = {
+        "s1": "violent_crimes",
+        "s2": "non_violent_crimes",
+        "s3": "sex_related_crimes",
+        "s4": "child_sexual_exploitation",
+        "s5": "defamation",
+        "s6": "specialized_advice",
+        "s7": "privacy",
+        "s8": "intellectual_property",
+        "s9": "indiscriminate_weapons",
+        "s10": "hate",
+        "s11": "self_harm",
+        "s12": "sexual_content",
+        "s13": "elections",
+        "s14": "code_interpreter_abuse",
+    }
+    categories = []
+    for code, category in categories_by_code.items():
+        if re.search(rf"(?<![a-z0-9]){code}(?![a-z0-9])", normalized_output):
+            categories.append(category)
+    return categories or ["unsafe"]
+
+
+def _safety_from_prompt_guard(label: str) -> dict[str, object]:
+    normalized = label.strip().upper()
+    if normalized == "BENIGN":
+        return _allowed_safety()
+
+    if normalized == "INJECTION":
+        category = "prompt_injection"
+    elif normalized == "JAILBREAK":
+        category = "jailbreak"
+    else:
+        category = "prompt_guard_unknown"
+    reason_code = f"prompt_guard_{category}"
+    return {
+        "status": "blocked",
+        "reasons": [reason_code],
+        "decision": "route_to_safety_triage",
+        "severity": "high",
+        "categories": [category],
+        "matched_rules": [],
+        "reason_codes": [reason_code],
+        "blocked_tools": ["planning", "event_capture", "profile_update"],
+        "allowed_next_route": "SafetyTriageRoute",
+        "audit_required": True,
+    }
 
 
 def _allowed_safety() -> dict[str, object]:
@@ -121,6 +174,26 @@ def tool_registry(state: VictusGraphState) -> VictusGraphState:
         "rationale": "tools_registered",
     }
     return _merge(state, tool_context=tool_context, intent=intent, node_name="tool_registry")
+
+
+def safety_blocked_response(state: VictusGraphState) -> VictusGraphState:
+    safety = state.get("safety", {})
+    tool_context = dict(state.get("tool_context", {}))
+    tool_context["allowed_tools"] = []
+    tool_context.setdefault("tool_results", [])
+    return _merge(
+        state,
+        tool_context=tool_context,
+        intent={
+            "primary_intent": "safety_blocked",
+            "confidence": 1.0,
+            "target_node": "safety_blocked_response",
+            "subintents": [],
+            "rationale": "safety_status_blocked",
+        },
+        response=_blocked_response(list(safety.get("reasons", []))),
+        node_name="safety_blocked_response",
+    )
 
 
 def compose_response(*, llm_client: LLMClient | None = None, model: str | None = None):

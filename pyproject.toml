@@ -24,6 +24,16 @@ contracts = "ops.scripts.contracts:main"
 embeddings = [
   "sentence-transformers>=3",
 ]
+safety-index = [
+  "chromadb>=1,<2",
+  "datasets>=4,<5",
+  "huggingface-hub>=1,<2",
+  "numpy>=2,<3",
+  "tqdm>=4,<5",
+]
+safety-training = [
+  "scikit-learn>=1.7,<2",
+]
 test = [
   "pytest>=8",
 ]

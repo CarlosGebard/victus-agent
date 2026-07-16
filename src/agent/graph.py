@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from agent.nodes.context import context_bootstrap
-from agent.nodes.runtime import compose_response, normalize_request, safety_precheck, tool_registry
-from agent.nodes.self_harm_response import self_harm_response
-from agent.nodes.summary import summarize_after_response
+from agent.nodes.event_capture import event_capture_node
+from agent.nodes.event_capture.schemas import EventCaptureInput
+from agent.nodes.runtime import _merge, normalize_request, safety_blocked_response, safety_precheck
 from agent.state import VictusGraphState
-from application.config import load_runtime_config
+from application.text import normalize_text
 from application.ports.llm import LLMClient
 
 
@@ -16,58 +15,86 @@ def build_graph(
     llm_client: LLMClient | None = None,
     session_context_repository=None,
 ):
-    runtime_config = load_runtime_config()
     graph_builder = StateGraph(VictusGraphState)
     graph_builder.add_node("normalize_request", normalize_request)
     graph_builder.add_node(
         "safety_precheck",
-        safety_precheck(llm_client=llm_client, model=runtime_config.safety.model),
+        safety_precheck(
+            llm_client=llm_client,
+            model="meta-llama/Llama-Guard-4-12B:together" if llm_client else None,
+        ),
     )
-    graph_builder.add_node(
-        "context_bootstrap",
-        context_bootstrap(session_context_repository, llm_client=llm_client),
-    )
-    graph_builder.add_node("self_harm_response", self_harm_response())
-    graph_builder.add_node("tool_registry", tool_registry)
-    graph_builder.add_node(
-        "compose_response",
-        compose_response(llm_client=llm_client, model=runtime_config.llm.model),
-    )
-    graph_builder.add_node(
-        "summarize_after_response",
-        summarize_after_response(session_context_repository),
-    )
+    graph_builder.add_node("safety_blocked_response", safety_blocked_response)
+    graph_builder.add_node("event_capture", _event_capture)
 
-    graph_builder.add_edge(START, "safety_precheck")
-    graph_builder.add_edge("safety_precheck", "normalize_request")
-    graph_builder.add_edge("normalize_request", "context_bootstrap")
+    graph_builder.add_edge(START, "normalize_request")
+    graph_builder.add_edge("normalize_request", "safety_precheck")
     graph_builder.add_conditional_edges(
-        "context_bootstrap",
-        _next_after_safety_precheck,
+        "safety_precheck",
+        _route_after_safety,
         {
-            "self_harm_response": "self_harm_response",
-            "tool_registry": "tool_registry",
+            "blocked": "safety_blocked_response",
+            "allowed": "event_capture",
         },
     )
-    graph_builder.add_edge("self_harm_response", "summarize_after_response")
-    graph_builder.add_edge("tool_registry", "compose_response")
-    graph_builder.add_edge("compose_response", "summarize_after_response")
-    graph_builder.add_edge("summarize_after_response", END)
+    graph_builder.add_edge("safety_blocked_response", END)
+    graph_builder.add_edge("event_capture", END)
     return graph_builder.compile()
 
 
-def _next_after_safety_precheck(state: VictusGraphState) -> str:
+def _event_capture(state: VictusGraphState) -> VictusGraphState:
+    request = dict(state.get("request", {}))
+    original_text = str(
+        request.get("original_text")
+        or request.get("raw_text")
+        or request.get("working_text")
+        or ""
+    )
+    working_text = str(request.get("working_text") or normalize_text(original_text))
+    user_id = str(request.get("user_id") or "local-user")
+
+    decision = event_capture_node().run(
+        EventCaptureInput(
+            user_id=user_id,
+            normalized_text=working_text,
+            active_clarification_exists=False,
+        )
+    )
+
+    request.pop("raw_text", None)
+    request["original_text"] = original_text
+    request["working_text"] = working_text
+
+    tool_context = dict(state.get("tool_context", {}))
+    tool_context["last_tool_result"] = {
+        "tool_name": "event_capture",
+        "data": decision.model_dump(mode="json"),
+    }
+
+    return _merge(
+        state,
+        request=request,
+        tool_context=tool_context,
+        intent={
+            "primary_intent": "event_capture",
+            "confidence": 1.0,
+            "target_node": "event_capture",
+            "subintents": [],
+            "rationale": decision.reason,
+        },
+        node_name="event_capture",
+    )
+
+
+def _route_after_safety(state: VictusGraphState) -> str:
     safety = state.get("safety", {})
-    categories = set(safety.get("categories", []))
-    if "self_harm" in categories and safety.get("severity") in {"high", "critical"}:
-        return "self_harm_response"
-    return "tool_registry"
+    if safety.get("status") == "blocked":
+        return "blocked"
+    return "allowed"
 
 
 def _build_studio_graph():
-    from infrastructure.llm.factory import build_llm_client
-
-    return build_graph(llm_client=build_llm_client())
+    return build_graph()
 
 
 graph = _build_studio_graph()

@@ -26,29 +26,29 @@ The current runtime flow is:
 
 ```text
 request
-  -> safety_precheck
   -> normalize_request
-  -> context_bootstrap
-  -> self_harm_response OR tool_registry
-  -> compose_response
-  -> summarize_after_response
+  -> safety_precheck
+     -> safety_blocked_response
+     -> event_capture
 ```
 
 ## Graph
 
 The graph is built in `src/agent/graph.py`.
 
-Current nodes:
+Current graph nodes:
 
-- `safety_precheck`: allows the request by default, or calls an injected LLM client when configured.
-- `normalize_request`: normalizes text and cleans legacy request fields.
-- `context_bootstrap`: loads compact session summary and pending interaction state.
-- `self_harm_response`: returns a blocked/support response for high-risk self-harm safety states.
-- `tool_registry`: exposes visible tools when safety is not blocked.
-- `compose_response`: returns either deterministic route text or an LLM-composed response.
-- `summarize_after_response`: stores compact conversation summary when a repository is provided.
+- `normalize_request`: normalizes the request text and writes `request.working_text`.
+- `safety_precheck`: writes `safety`; without an injected guard client it defaults to allow.
+- `safety_blocked_response`: writes a blocked user warning and exposes no tools.
+- `event_capture`: runs the event capture classifier and stores the classifier decision in graph
+  state for allowed requests.
 
 The graph does not currently execute tool side effects or append user events by itself.
+
+Context bootstrap, response composition, and session summary modules still exist in the codebase,
+but they are intentionally not wired into the visual graph while the first tool path is being
+developed.
 
 ## Tools
 
@@ -106,6 +106,9 @@ Graph nodes may receive an `LLMClient`, but should not import provider clients d
 These concepts appear in domain models or older contracts, but are not active runtime branches:
 
 - semantic intent router
+- multi-node graph orchestration
+- context bootstrap branch in the visual graph
+- response composition branch in the visual graph
 - full diet planning
 - plan revision
 - weekly review

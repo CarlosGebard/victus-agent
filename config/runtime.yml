@@ -2,4 +2,4 @@ llm:
   provider: litellm
   model: litellm_proxy/gemini-flash-lite
 safety:
-  model: meta-llama/Llama-Guard-3-1B
+  model: meta-llama/Llama-Guard-4-12B:together
