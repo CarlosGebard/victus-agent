@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.nodes.profile_update.schemas import ProfileUpdateInput
+from domain.tools.profile_update import ProfileUpdateInput
 
 
 PROFILE_UPDATE_SYSTEM_PROMPT = """

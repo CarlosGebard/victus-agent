@@ -4,9 +4,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from agent.nodes.event_capture.schemas import EventCaptureInput
-from agent.nodes.profile_update.schemas import ProfileUpdateInput
+from domain.tools.event_capture import EventCaptureInput
+from domain.tools.profile_update import ProfileUpdateInput
 from domain.tools.models import ToolResult
+from domain.tools.profile_remote import RecoverProfileInput
 
 ToolHandler = Callable[[dict[str, Any]], ToolResult]
 
@@ -36,6 +37,13 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
         name="profile_update",
         description="Classify durable user profile changes such as restrictions, preferences, and schedule context.",
         input_model=ProfileUpdateInput,
+        visible_to_model=True,
+        writes_events=False,
+    ),
+    "recuperar_perfil": ToolDefinition(
+        name="recuperar_perfil",
+        description="Recover the authenticated user's Victus profile from the web backend.",
+        input_model=RecoverProfileInput,
         visible_to_model=True,
         writes_events=False,
     ),

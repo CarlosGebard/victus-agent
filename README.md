@@ -8,7 +8,7 @@ The current codebase implements the first runtime slice, not the full nutrition 
 - compact session context
 - static tool registration
 - two typed tool handlers: `event_capture` and `profile_update`
-- local MCP stdio server for those tools
+- local MCP stdio server and deployable MCP HTTP server for those tools
 - event, projection, session-context, and tool result models
 - PostgreSQL repositories and Alembic migrations under `ops/db/`
 - local CLI commands under `uv run victus ...`
@@ -35,7 +35,7 @@ src/application/      config, ports, tools, MCP client, projection services
 src/domain/           pure models and contracts
 src/infrastructure/   database, repositories, LLM adapters
 src/victus_cli/       local operational CLI
-src/victus_mcp/       local MCP stdio server
+src/victus_mcp/       local MCP stdio server and deployable MCP HTTP server
 ops/db/               Alembic config and migrations
 ops/scripts/          helper scripts
 config/               runtime config
@@ -70,6 +70,7 @@ MCP commands:
 uv run victus mcp-list-tools
 uv run victus mcp-call event_capture '{"user_id":"local-smoke-user","normalized_text":"hoy comi arroz"}'
 uv run victus-mcp
+uv run victus-mcp-http
 ```
 
 Graph visualization:

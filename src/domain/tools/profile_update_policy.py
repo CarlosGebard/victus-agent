@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
-from agent.nodes.profile_update.event_mapping import event_type_for_decision
-from agent.nodes.profile_update.schemas import ProfileUpdateDecision, ProfileUpdateInput
+from domain.tools.profile_update import ProfileUpdateDecision, ProfileUpdateInput
+from domain.tools.profile_update_events import event_type_for_decision
 
 
 _REROUTE_PATTERNS = (

@@ -24,6 +24,8 @@ def main() -> int:
         nargs=argparse.REMAINDER,
         help="Additional langgraph dev args.",
     )
+    subparsers.add_parser("login", help="Authenticate with Victus using browser OAuth PKCE.")
+    subparsers.add_parser("logout", help="Remove the local Victus session.")
     subparsers.add_parser("mcp-list-tools", help="List tools exposed by the local Victus MCP server.")
     mcp_call_parser = subparsers.add_parser("mcp-call", help="Call one local Victus MCP tool.")
     mcp_call_parser.add_argument("tool_name")
@@ -59,6 +61,10 @@ def main() -> int:
         return _run([sys.executable, "-m", "compileall", "src", "tests"])
     if args.command == "graph-dev":
         return _run(["langgraph", "dev", "--config", "langgraph.json", *args.langgraph_args])
+    if args.command == "login":
+        return _login()
+    if args.command == "logout":
+        return _logout()
     if args.command == "mcp-list-tools":
         return _mcp_list_tools()
     if args.command == "mcp-call":
@@ -86,6 +92,27 @@ def main() -> int:
 
 def _run(command: list[str]) -> int:
     return subprocess.run(command, check=False).returncode
+
+
+def _login() -> int:
+    from victus_cli.oauth_login import LoginError, run_browser_login
+
+    try:
+        result = run_browser_login()
+    except LoginError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    print(f"Victus session saved at {result.session_path}")
+    return 0
+
+
+def _logout() -> int:
+    from victus_mcp.utils.auth import delete_local_session
+
+    removed = delete_local_session()
+    print("Victus session removed." if removed else "No local Victus session found.")
+    return 0
 
 
 def _mcp_list_tools() -> int:

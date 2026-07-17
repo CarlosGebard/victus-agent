@@ -3,7 +3,7 @@ id: VICTUS-AGENT-CONTRACTS
 title: Victus Agent Contracts
 status: current
 version: v1
-updated_at: 2026-07-12
+updated_at: 2026-07-17
 owners:
   - victus-agent-runtime
 ---
@@ -29,6 +29,7 @@ Current active contracts:
 - database schema: `src/infrastructure/db/schema.py`
 - migrations: `ops/db/migrations/`
 - MCP tool exposure: `src/victus_mcp/server.py`
+- MCP HTTP exposure: `src/victus_mcp/http_server.py`
 
 Detailed reference docs remain under `docs/contracts/`.
 
@@ -38,7 +39,9 @@ Detailed reference docs remain under `docs/contracts/`.
 - Current read state: projections rebuilt from events.
 - Conversation continuity: compact session context.
 - Graph execution: LangGraph state.
-- Tool boundary: typed handlers returning `ToolResult`.
+- Tool boundary: MCP-exposed typed handlers returning `ToolResult`.
+- MCP transports: local stdio and deployable Streamable HTTP expose the same registered tool
+  surface.
 
 LangGraph checkpoints, LLM outputs, and response text are not canonical user history.
 
@@ -49,6 +52,7 @@ The current registry exposes:
 ```text
 event_capture
 profile_update
+recuperar_perfil
 ```
 
 Registry rules:
@@ -56,8 +60,13 @@ Registry rules:
 - safety-blocked turns expose no tools
 - handlers validate input with Pydantic models
 - handlers return `ToolResult`
-- current handlers classify/validate and do not persist events
+- current local classification handlers classify/validate and do not persist events
+- `recuperar_perfil` reads a local OAuth access token, refreshes it when possible, and performs a
+  read-only backend request to `/me`
 - adding or renaming a tool is a contract change
+
+Tool-specific input/decision contracts live in `src/domain/tools/`. Node-local schema,
+validator, or skill-manifest copies are not contract sources.
 
 ## Current `ToolResult`
 

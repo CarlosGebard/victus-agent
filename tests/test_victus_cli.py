@@ -5,6 +5,7 @@ from importlib import import_module
 
 import pytest
 
+from victus_cli.oauth_login import LoginError, LoginResult
 from victus_cli import main as cli_main
 
 victus_cli_main_module = import_module("victus_cli.main")
@@ -85,6 +86,46 @@ def test_cli_mcp_call_rejects_invalid_json(monkeypatch: pytest.MonkeyPatch, caps
 
     assert cli_main() == 2
     assert "invalid arguments JSON" in capsys.readouterr().err
+
+
+def test_cli_login_runs_browser_oauth(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    def login() -> LoginResult:
+        return LoginResult(session_path="/tmp/session.json")
+
+    from victus_cli import oauth_login
+
+    monkeypatch.setattr(oauth_login, "run_browser_login", login)
+    monkeypatch.setattr(sys, "argv", ["victus", "login"])
+
+    assert cli_main() == 0
+
+    output = capsys.readouterr().out
+    assert "Victus session saved" in output
+
+
+def test_cli_login_reports_oauth_errors(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    def login() -> LoginResult:
+        raise LoginError("login failed")
+
+    from victus_cli import oauth_login
+
+    monkeypatch.setattr(oauth_login, "run_browser_login", login)
+    monkeypatch.setattr(sys, "argv", ["victus", "login"])
+
+    assert cli_main() == 2
+    assert "login failed" in capsys.readouterr().err
+
+
+def test_cli_logout_removes_session(monkeypatch: pytest.MonkeyPatch, tmp_path, capsys) -> None:
+    session_dir = tmp_path / ".victus"
+    session_dir.mkdir()
+    (session_dir / "session.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(sys, "argv", ["victus", "logout"])
+
+    assert cli_main() == 0
+    assert not (session_dir / "session.json").exists()
+    assert "Victus session removed" in capsys.readouterr().out
 
 
 def test_cli_self_harm_response_prints_json(monkeypatch: pytest.MonkeyPatch, capsys) -> None:

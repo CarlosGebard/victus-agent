@@ -2,7 +2,7 @@
 id: VICTUS-AGENT-OPERATIONS
 title: Victus Agent Operations
 status: current
-updated_at: 2026-07-12
+updated_at: 2026-07-17
 owners:
   - victus-agent-runtime
 ---
@@ -96,6 +96,12 @@ These commands require `DATABASE_URL` and a reachable local PostgreSQL instance.
 
 ## MCP
 
+Authenticate locally for MCP token relay:
+
+```bash
+BACKEND_API_URL=http://localhost:8000 uv run victus login
+```
+
 List tools:
 
 ```bash
@@ -106,6 +112,7 @@ Call a tool:
 
 ```bash
 uv run victus mcp-call event_capture '{"user_id":"local-smoke-user","normalized_text":"hoy comi arroz"}'
+BACKEND_API_URL=http://localhost:8000/v1 uv run victus mcp-call recuperar_perfil '{}'
 ```
 
 Start the stdio server for an MCP client:
@@ -113,6 +120,62 @@ Start the stdio server for an MCP client:
 ```bash
 uv run victus-mcp
 ```
+
+Start the deployable Streamable HTTP MCP server:
+
+```bash
+uv run victus-mcp-http
+curl http://localhost:8765/health
+```
+
+Runtime overrides:
+
+```text
+VICTUS_MCP_HTTP_HOST=0.0.0.0
+VICTUS_MCP_HTTP_PORT=8765
+BACKEND_API_URL=http://localhost:8000/v1
+```
+
+Docker build/run:
+
+```bash
+docker build -t victus-agent-mcp .
+docker run --rm -p 8765:8765 -e BACKEND_API_URL=http://host.docker.internal:8000/v1 victus-agent-mcp
+```
+
+LangGraph web-app clients should connect to:
+
+```text
+http://<victus-agent-host>:8765/mcp
+```
+
+Register the local server with Codex:
+
+```bash
+codex mcp add victus-agent -- uv run victus-mcp
+codex mcp list
+```
+
+Token lookup order for `recuperar_perfil`:
+
+1. `VICTUS_API_TOKEN`
+2. OAuth `access_token` from `~/.victus/session.json`
+3. Legacy `VICTUS_API_TOKEN` from `~/.victus/session.json`
+
+`victus login` opens the browser and completes OAuth Authorization Code + PKCE through a local
+`127.0.0.1` callback. The MCP server forwards the resulting access token as
+`Authorization: Bearer <token>` and does not print it. If the access token is near expiry and a
+refresh token exists, the MCP server refreshes the local session before calling the backend.
+
+Remove the local session:
+
+```bash
+uv run victus logout
+```
+
+The stdio server is for local users and Codex desktop. The HTTP server is for infrastructure and
+service-to-service integration. Do not depend on `~/.victus/session.json` in production containers;
+pass request/session auth at the web-app boundary.
 
 ## Graph Dev
 

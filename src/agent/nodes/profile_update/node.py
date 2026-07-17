@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 
-from agent.nodes.profile_update.policy import decide_with_policy
 from agent.nodes.profile_update.prompts import (
     PROFILE_UPDATE_SYSTEM_PROMPT,
     build_profile_update_prompt,
 )
-from agent.nodes.profile_update.schemas import ProfileUpdateDecision, ProfileUpdateInput
-from agent.nodes.profile_update.validators import validate_profile_update_decision
 from application.ports.llm import LLMClient, LLMRequest
+from domain.tools.profile_update import ProfileUpdateDecision, ProfileUpdateInput
+from domain.tools.profile_update_policy import decide_with_policy
+from domain.tools.profile_update_validators import validate_profile_update_decision
 
 
 class ProfileUpdateNode:

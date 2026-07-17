@@ -7,17 +7,21 @@ dependencies = [
   "alembic>=1,<2",
   "langgraph>=1,<2",
   "langgraph-cli[inmem]>=0.4,<1",
+  "httpx>=0.28,<1",
   "litellm>=1,<2",
   "mcp>=1,<2",
   "psycopg[binary]>=3,<4",
   "pydantic>=2",
   "PyYAML>=6",
   "SQLAlchemy>=2,<3",
+  "starlette>=0.50,<1",
+  "uvicorn>=0.38,<1",
 ]
 
 [project.scripts]
 victus = "victus_cli:main"
 victus-mcp = "victus_mcp.server:main"
+victus-mcp-http = "victus_mcp.http_server:main"
 contracts = "ops.scripts.contracts:main"
 
 [project.optional-dependencies]

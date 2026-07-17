@@ -2,7 +2,7 @@
 id: VICTUS-AGENT-ARCHITECTURE
 title: Victus Agent Architecture
 status: current
-updated_at: 2026-07-12
+updated_at: 2026-07-17
 owners:
   - victus-agent-runtime
 ---
@@ -19,7 +19,7 @@ src/application/        config, ports, tools, MCP client, projection services
 src/infrastructure/     database, repositories, provider adapters
 src/agent/              LangGraph orchestration
 src/victus_cli/         local CLI
-src/victus_mcp/         MCP stdio server
+src/victus_mcp/         MCP stdio and HTTP servers
 ```
 
 The current runtime flow is:
@@ -41,8 +41,8 @@ Current graph nodes:
 - `normalize_request`: normalizes the request text and writes `request.working_text`.
 - `safety_precheck`: writes `safety`; without an injected guard client it defaults to allow.
 - `safety_blocked_response`: writes a blocked user warning and exposes no tools.
-- `event_capture`: runs the event capture classifier and stores the classifier decision in graph
-  state for allowed requests.
+- `event_capture`: calls the application tool boundary for `event_capture` and stores the
+  returned `ToolResult` envelope in graph state for allowed requests.
 
 The graph does not currently execute tool side effects or append user events by itself.
 
@@ -58,15 +58,26 @@ Active tool names:
 
 - `event_capture`
 - `profile_update`
+- `recuperar_perfil`
 
 Handlers live in `src/application/tools/handlers.py`. They validate Pydantic input, run the
-corresponding classifier node, and return a `ToolResult`.
+corresponding domain tool policy, validate the decision, and return a `ToolResult`.
 
-Current handlers classify and validate decisions. They do not persist user events.
+Current local classification handlers classify and validate decisions. They do not persist user
+events. `recuperar_perfil` is a remote read-only tool that relays the local user token to the web
+backend and does not write events.
+
+Tool input/decision models, event mappings, validation rules, skill metadata, and deterministic
+policies live under `src/domain/tools/`. Graph-node modules must not duplicate those contracts.
 
 ## MCP Boundary
 
 `src/victus_mcp/server.py` exposes the active visible tools over stdio using the MCP package.
+This is the local-user/Codex desktop transport.
+
+`src/victus_mcp/http_server.py` exposes the same tools over Streamable HTTP at `/mcp`, with
+`/health` for infrastructure checks. This is the deployable transport intended for web-app or
+service-to-service LangGraph integrations.
 
 Local smoke commands:
 
@@ -74,6 +85,32 @@ Local smoke commands:
 uv run victus mcp-list-tools
 uv run victus mcp-call event_capture '{"user_id":"local-smoke-user","normalized_text":"hoy comi arroz"}'
 uv run victus-mcp
+uv run victus-mcp-http
+```
+
+Codex can connect to this stdio server with:
+
+```bash
+codex mcp add victus-agent -- uv run victus-mcp
+```
+
+`recuperar_perfil` reads `VICTUS_API_TOKEN` from the environment first for development override,
+then reads OAuth tokens from `~/.victus/session.json`, refreshes when possible, and forwards the
+access token to `GET {BACKEND_API_URL}/me`.
+
+For deployed HTTP MCP usage, production authentication should be supplied by the calling service or
+web-app boundary rather than relying on local `~/.victus/session.json` files.
+
+LangGraph services can consume the HTTP MCP endpoint with `langchain-mcp-adapters` using a
+configuration like:
+
+```python
+MultiServerMCPClient({
+    "victus": {
+        "transport": "http",
+        "url": "http://victus-agent:8765/mcp",
+    }
+})
 ```
 
 ## Persistence

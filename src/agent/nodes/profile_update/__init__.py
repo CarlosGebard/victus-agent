@@ -1,8 +1,8 @@
-from agent.nodes.profile_update.event_mapping import EVENT_TYPE_BY_ACTION, event_type_for_decision
 from agent.nodes.profile_update.node import ProfileUpdateNode, profile_update_node
-from agent.nodes.profile_update.schemas import ProfileUpdateDecision, ProfileUpdateInput
-from agent.nodes.profile_update.skill_manifest import PROFILE_UPDATE_SKILLS
-from agent.nodes.profile_update.validators import (
+from domain.tools.profile_update import ProfileUpdateDecision, ProfileUpdateInput
+from domain.tools.profile_update_events import EVENT_TYPE_BY_ACTION, event_type_for_decision
+from domain.tools.profile_update_manifest import PROFILE_UPDATE_SKILLS
+from domain.tools.profile_update_validators import (
     ProfileUpdateValidationError,
     validate_profile_update_decision,
 )

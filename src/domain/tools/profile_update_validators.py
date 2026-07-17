@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from agent.nodes.profile_update.event_mapping import event_type_for_decision
-from agent.nodes.profile_update.policy import (
+from domain.tools.profile_update import ProfileUpdateDecision, ProfileUpdateInput
+from domain.tools.profile_update_events import event_type_for_decision
+from domain.tools.profile_update_manifest import PROFILE_UPDATE_SKILLS
+from domain.tools.profile_update_policy import (
     contains_explicit_allergy,
     contains_explicit_medical_restriction,
 )
-from agent.nodes.profile_update.schemas import ProfileUpdateDecision, ProfileUpdateInput
-from agent.nodes.profile_update.skill_manifest import PROFILE_UPDATE_SKILLS
 
 
 class ProfileUpdateValidationError(ValueError):

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.nodes.profile_update.schemas import ProfileUpdateDecision
+from domain.tools.profile_update import ProfileUpdateDecision
 
 
 EVENT_TYPE_BY_ACTION = {

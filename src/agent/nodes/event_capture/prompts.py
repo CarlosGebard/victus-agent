@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.nodes.event_capture.schemas import EventCaptureInput
+from domain.tools.event_capture import EventCaptureInput
 
 
 EVENT_CAPTURE_SYSTEM_PROMPT = """

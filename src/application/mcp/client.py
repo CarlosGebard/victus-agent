@@ -40,7 +40,7 @@ class VictusMCPClient:
     def _server_params(self):
         from mcp import StdioServerParameters
 
-        env = {**os.environ, **self.config.env} if self.config.env else None
+        env = {**os.environ, **self.config.env}
         return StdioServerParameters(command=self.config.command, args=self.config.args, env=env)
 
     def _session(self):

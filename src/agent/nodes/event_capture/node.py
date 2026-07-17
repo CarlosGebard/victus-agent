@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 
-from agent.nodes.event_capture.policy import decide_with_policy
 from agent.nodes.event_capture.prompts import (
     EVENT_CAPTURE_SYSTEM_PROMPT,
     build_event_capture_prompt,
 )
-from agent.nodes.event_capture.schemas import EventCaptureDecision, EventCaptureInput
-from agent.nodes.event_capture.validators import validate_event_capture_decision
 from application.ports.llm import LLMClient, LLMRequest
+from domain.tools.event_capture import EventCaptureDecision, EventCaptureInput
+from domain.tools.event_capture_policy import decide_with_policy
+from domain.tools.event_capture_validators import validate_event_capture_decision
 
 
 class EventCaptureNode:

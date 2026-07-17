@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from agent.nodes.event_capture import event_capture_node
-from agent.nodes.event_capture.schemas import EventCaptureInput
 from agent.nodes.runtime import _merge, normalize_request, safety_blocked_response, safety_precheck
 from agent.state import VictusGraphState
-from application.text import normalize_text
 from application.ports.llm import LLMClient
+from application.text import normalize_text
+from application.tools import execute_tool
 
 
 def build_graph(
@@ -53,12 +52,13 @@ def _event_capture(state: VictusGraphState) -> VictusGraphState:
     working_text = str(request.get("working_text") or normalize_text(original_text))
     user_id = str(request.get("user_id") or "local-user")
 
-    decision = event_capture_node().run(
-        EventCaptureInput(
-            user_id=user_id,
-            normalized_text=working_text,
-            active_clarification_exists=False,
-        )
+    tool_result = execute_tool(
+        "event_capture",
+        {
+            "user_id": user_id,
+            "normalized_text": working_text,
+            "active_clarification_exists": False,
+        },
     )
 
     request.pop("raw_text", None)
@@ -68,8 +68,9 @@ def _event_capture(state: VictusGraphState) -> VictusGraphState:
     tool_context = dict(state.get("tool_context", {}))
     tool_context["last_tool_result"] = {
         "tool_name": "event_capture",
-        "data": decision.model_dump(mode="json"),
+        **tool_result.model_dump(mode="json"),
     }
+    data = tool_result.data if isinstance(tool_result.data, dict) else {}
 
     return _merge(
         state,
@@ -80,7 +81,7 @@ def _event_capture(state: VictusGraphState) -> VictusGraphState:
             "confidence": 1.0,
             "target_node": "event_capture",
             "subintents": [],
-            "rationale": decision.reason,
+            "rationale": data.get("reason", ""),
         },
         node_name="event_capture",
     )

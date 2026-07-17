@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from agent.nodes.event_capture.event_mapping import EVENT_TYPE_BY_ACTION
-from agent.nodes.event_capture.policy import contains_high_risk_symptom, contains_nutrition_value_key
-from agent.nodes.event_capture.schemas import EventCaptureDecision, EventCaptureInput
-from agent.nodes.event_capture.skill_manifest import EVENT_CAPTURE_SKILLS
+from domain.tools.event_capture import EventCaptureDecision, EventCaptureInput
+from domain.tools.event_capture_events import EVENT_TYPE_BY_ACTION
+from domain.tools.event_capture_manifest import EVENT_CAPTURE_SKILLS
+from domain.tools.event_capture_policy import contains_high_risk_symptom, contains_nutrition_value_key
 
 
 class EventCaptureValidationError(ValueError):

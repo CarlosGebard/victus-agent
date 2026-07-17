@@ -4,7 +4,7 @@ import asyncio
 import json
 from typing import Any
 
-from application.tools import execute_tool, list_tools
+from application.tools import execute_tool_async, list_tools
 
 
 def build_server():
@@ -26,7 +26,7 @@ def build_server():
 
     @server.call_tool()
     async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[types.ContentBlock]:
-        result = execute_tool(name, arguments)
+        result = await execute_tool_async(name, arguments)
         return [
             types.TextContent(
                 type="text",

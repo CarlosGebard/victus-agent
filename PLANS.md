@@ -174,3 +174,139 @@ existing normalized BGE-M3 vectors without coupling it to the Llama Guard graph 
 - A linear classifier may miss adversarial intent, negation, quotation, or unseen languages.
 - Probabilities and thresholds require validation on the official dataset splits before acting as a
   production safety gate.
+
+# MCP tool boundary restructure
+
+## Goal
+
+Make the MCP-exposed tool registry the active skill/tool surface while moving duplicated
+event-capture and profile-update contracts out of graph nodes and into the domain/application tool
+boundary.
+
+## Scope
+
+- Move tool input/decision models, validation rules, event mappings, and skill metadata out of
+  `agent/nodes/event_capture` and `agent/nodes/profile_update`.
+- Keep public tool names stable: `event_capture` and `profile_update`.
+- Keep the existing MCP stdio server entrypoint as the external tool surface.
+- Update the graph to consume the application tool boundary instead of running classifier nodes
+  directly.
+- Update architecture/contract docs only where active behavior changes.
+
+## Assumptions
+
+- Current handlers classify and validate only; they do not persist events.
+- Deterministic policy classifiers remain the default path when no LLM client/model is provided.
+- Codex connection should use the `victus-mcp` stdio server command.
+
+## Steps
+
+1. Move schemas, validators, skill metadata, event mapping, and deterministic policies into
+   `domain/tools`.
+2. Update `application.tools` to import domain contracts and execute domain policies directly.
+3. Update graph orchestration to call the tool boundary and store a `ToolResult` envelope.
+4. Remove duplicate node-local schema, validator, and skill-manifest modules.
+5. Update focused tests and docs for the new boundary.
+
+## Validation
+
+- `uv run --extra test victus test tests/application/test_tool_handlers.py tests/victus_mcp/test_server.py tests/agent/test_graph.py tests/contracts/test_tool_models.py`
+- `uv run --extra test victus compile`
+
+## Risks
+
+- The graph test contract changes from storing a raw classifier decision to storing the
+  `ToolResult.data` payload under the existing `last_tool_result` key.
+- Existing imports from removed node-local modules must be migrated in one pass to avoid stale
+  compatibility shims.
+
+# MCP token relay authentication
+
+## Goal
+
+Allow the local Victus MCP server to relay a user JWT to the decoupled web backend without asking
+the user to manually configure environment variables for every Codex session.
+
+## Scope
+
+- Add a local session utility that reads `VICTUS_API_TOKEN` first and then OAuth tokens from
+  `~/.victus/session.json`.
+- Replace `victus login` token entry with browser OAuth Authorization Code + PKCE.
+- Add `victus logout` to remove the local session.
+- Add an MCP-visible `recuperar_perfil` tool that calls `GET {BACKEND_API_URL}/me`.
+- Use `Authorization: Bearer <token>` and handle missing, expired, unavailable, and malformed
+  backend states gracefully.
+- Document the backend integration prompt and local validation flow.
+
+## Assumptions
+
+- The backend API remains in a separate repository.
+- The default auth backend URL is `http://localhost:8000`.
+- The default profile API URL is `http://localhost:8000/v1`.
+- The MCP server should keep returning the repository-standard `ToolResult` envelope.
+
+## Steps
+
+1. Implement `victus_mcp.utils.auth`.
+2. Add CLI browser login with local loopback callback.
+3. Add refresh-token handling and logout.
+4. Add async profile recovery handler and register it as `recuperar_perfil`.
+5. Update tests for auth, CLI, tool handling, and MCP exposure.
+6. Update operations docs and backend integration prompt.
+
+## Validation
+
+- `uv run --extra test victus test tests/victus_mcp/test_auth.py tests/application/test_tool_handlers.py tests/test_victus_cli.py tests/victus_mcp/test_server.py`
+- `uv run --extra test victus compile`
+- `uv run victus mcp-list-tools`
+- `uv run victus mcp-call recuperar_perfil '{}'`
+
+## Risks
+
+- `~/.victus/session.json` stores a bearer token and must remain local-only with restrictive
+  permissions.
+- The backend `/me` response shape must stay compatible with the profile summary formatter.
+
+# Deployable MCP HTTP transport
+
+## Goal
+
+Expose the same Victus MCP tool surface over a deployable Streamable HTTP transport while keeping
+the existing local stdio MCP server for Codex desktop and MCP registry use.
+
+## Scope
+
+- Keep `victus-mcp` as the local stdio server.
+- Add `victus-mcp-http` as a stateless Streamable HTTP MCP server.
+- Reuse `src/victus_mcp/server.py` and `application.tools` so tool definitions stay single-source.
+- Add a health endpoint and Dockerfile for infrastructure deployment.
+- Document how a LangGraph web app can consume the HTTP MCP endpoint with
+  `langchain-mcp-adapters`.
+
+## Assumptions
+
+- Local users keep using OAuth session files through the stdio server.
+- Web/infrastructure users should not rely on `~/.victus/session.json`; request/session auth should
+  come from the web backend or infrastructure layer.
+- The first deployable transport can be stateless and read-only from the MCP session perspective.
+
+## Steps
+
+1. Build a Starlette ASGI app mounted at `/mcp` using the MCP SDK's
+   `StreamableHTTPSessionManager`.
+2. Add `victus-mcp-http` entrypoint with host/port environment overrides.
+3. Add Dockerfile for the HTTP server runtime.
+4. Add focused tests for health/app construction and current tool registration.
+5. Update architecture and operations docs with local stdio vs deployable HTTP split.
+
+## Validation
+
+- `uv run --extra test victus test tests/victus_mcp`
+- `uv run --extra test victus compile`
+- `uv run victus-mcp-http` and `curl http://localhost:8765/health`
+
+## Risks
+
+- Remote HTTP MCP auth must not depend on local session files in production.
+- LangGraph web app integration should consume `/mcp` over HTTP and pass user auth explicitly at
+  the application boundary.

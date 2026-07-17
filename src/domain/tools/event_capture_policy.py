@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
-from agent.nodes.event_capture.event_mapping import EVENT_TYPE_BY_ACTION
-from agent.nodes.event_capture.schemas import EventCaptureDecision, EventCaptureInput
+from domain.tools.event_capture import EventCaptureDecision, EventCaptureInput
+from domain.tools.event_capture_events import EVENT_TYPE_BY_ACTION
 
 
 _PROFILE_REROUTE_PATTERNS = (
