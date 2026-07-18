@@ -11,7 +11,7 @@ from domain.projections.models.nutrition_status import (
     RecentMealItem,
     SymptomView,
 )
-from domain.projections.projectors._common import now_iso
+from domain.projections.projectors._common import now_iso, payload_dict
 
 NUTRITION_STATUS_PROJECTOR = "nutrition_status"
 
@@ -25,8 +25,8 @@ def apply_nutrition_status_event(
         last_event_seq=0,
         updated_at=now_iso(),
     )
+    payload = payload_dict(event)
     if event.event_type == "meal.logged":
-        payload = event.payload
         meal = RecentMeal(
             meal_id=payload["meal_id"],
             meal_type=payload["meal_type"],
@@ -45,16 +45,15 @@ def apply_nutrition_status_event(
         current.recent_meals.insert(0, meal)
         current.recent_meals = current.recent_meals[:50]
     elif event.event_type == "meal.deleted":
-        meal_id = event.payload["meal_id"]
+        meal_id = payload["meal_id"]
         for meal in current.recent_meals:
             if meal.meal_id == meal_id:
                 meal.status = "deleted"
     elif event.event_type == "biometrics.logged":
-        current.biometrics = _apply_biometrics(current.biometrics, event.payload)
+        current.biometrics = _apply_biometrics(current.biometrics, payload)
     elif event.event_type == "lifestyle_metric.logged":
-        current.biometrics = _apply_lifestyle_metric(current.biometrics, event.payload)
+        current.biometrics = _apply_lifestyle_metric(current.biometrics, payload)
     elif event.event_type == "symptom.logged":
-        payload = event.payload
         current.symptoms = [
             item for item in current.symptoms if item.symptom_id != payload["symptom_id"]
         ]

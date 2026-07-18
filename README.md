@@ -2,10 +2,11 @@
 
 Runtime repository for the Victus agent prototype.
 
-The current codebase implements a tool-first runtime slice, not the full nutrition product:
+The current codebase implements a tool-first LangGraph agent runtime, not the full nutrition product:
 
-- a minimal LangGraph with normalization, safety precheck, blocked response, and `event_capture`
-- compact session context
+- model-driven selection and bounded execution of the canonical typed tools
+- checkpointed multi-turn state, clarification/confirmation interrupts, and bounded user memory
+- an authenticated asynchronous `POST /chat` boundary
 - one catalog and runtime shared by every tool surface
 - vertical tools for capture, profile, planning, feedback, evidence, and interaction
 - LangGraph, MCP stdio/HTTP, and CLI adapters
@@ -18,11 +19,11 @@ models. LangGraph state is orchestration state only.
 
 ## Current Status
 
-Status: `prototype / runtime foundation`
+Status: `LangGraph V1 / testable runtime`
 
-Implemented enough to validate the first graph node, tool classification, MCP exposure, contracts,
-database repositories, and projection rebuild behavior. Not yet implemented as a complete
-end-to-end nutrition coach.
+Implemented for deterministic unit testing with in-memory LangGraph persistence and for PostgreSQL
+deployment with explicit storage setup. Provider and database acceptance still require configured
+external services.
 
 ## Repository Map
 
@@ -48,11 +49,24 @@ uv run --extra test victus compile
 uv run --extra test victus check
 ```
 
+Complete local stack:
+
+```bash
+cp .env.example .env  # only when .env does not exist
+docker compose up -d --build
+docker compose ps
+docker compose logs -f chat mcp
+docker compose down
+```
+
+Compose starts PostgreSQL, runs both idempotent setup jobs, and then starts chat on `8766` and MCP
+on `8765`. Configure the external backend and LiteLLM proxy URLs in `.env` first.
+
 Database and smoke commands:
 
 ```bash
-docker compose up -d postgres
 uv run victus db-upgrade
+uv run victus langgraph-storage-setup
 uv run victus db-current
 uv run victus smoke-event-store
 uv run victus smoke-projections
@@ -67,6 +81,7 @@ uv run victus mcp-list-tools
 uv run victus mcp-call event_capture '{"user_id":"local-smoke-user","normalized_text":"hoy comi arroz"}'
 uv run victus-mcp
 uv run victus-mcp-http
+uv run victus-chat-http
 ```
 
 Graph visualization:

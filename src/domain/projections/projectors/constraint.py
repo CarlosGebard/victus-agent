@@ -7,7 +7,7 @@ from domain.projections.models.constraint import (
     SafetyFlag,
     SoftConstraint,
 )
-from domain.projections.projectors._common import now_iso
+from domain.projections.projectors._common import now_iso, payload_dict
 
 CONSTRAINT_PROJECTOR = "constraint"
 
@@ -21,7 +21,7 @@ def apply_constraint_event(
         derived_from_event_seq=0,
         updated_at=now_iso(),
     )
-    payload = event.payload
+    payload = payload_dict(event)
     if event.event_type == "restriction.added":
         kind = payload["restriction_kind"]
         constraint = HardConstraint(

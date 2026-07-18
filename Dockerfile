@@ -13,10 +13,12 @@ RUN pip install --no-cache-dir uv
 
 COPY pyproject.toml uv.lock ./
 
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project --extra safety-index
 
 COPY src ./src
+COPY ops ./ops
+COPY config ./config
 
-EXPOSE 8765
+EXPOSE 8765 8766
 
 CMD ["uv", "run", "--no-sync", "python", "-m", "adapters.mcp.transport"]

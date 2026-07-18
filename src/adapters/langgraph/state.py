@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
+
+from langgraph.graph.message import add_messages
 
 from domain.events.refs import ToolEventRef
 from domain.projections.models import (
@@ -9,8 +11,8 @@ from domain.projections.models import (
     PlanningHistoryProjection,
     UserProfileProjection,
 )
-from tools.contracts import ToolResult
-from domain.session_context.models import BootstrapContext, ConversationStateSummary, PendingInteractionState
+
+GRAPH_VERSION = "1"
 
 
 class RequestState(TypedDict, total=False):
@@ -22,14 +24,6 @@ class RequestState(TypedDict, total=False):
     locale: str
     timezone: str
     conversation_id: str
-
-
-class SessionContextState(TypedDict, total=False):
-    conversation_id: str
-    summary: ConversationStateSummary
-    pending_interaction: PendingInteractionState
-    bootstrap: BootstrapContext
-    updated_summary: ConversationStateSummary
 
 
 class SafetyState(TypedDict, total=False):
@@ -65,8 +59,10 @@ class ProjectionState(TypedDict, total=False):
 class ToolContextState(TypedDict, total=False):
     allowed_tools: list[str]
     proposed_action: dict[str, Any]
-    last_tool_result: ToolResult
-    tool_results: list[ToolResult]
+    last_tool_result: dict[str, Any]
+    tool_results: list[dict[str, Any]]
+    loop_count: int
+    confirmation: dict[str, Any]
 
 
 class PlanningState(TypedDict, total=False):
@@ -99,6 +95,11 @@ class ResponseState(TypedDict, total=False):
     internal_notes: list[str]
 
 
+class MemoryState(TypedDict, total=False):
+    recalled: list[dict[str, Any]]
+    compact_summary: str
+
+
 class AuditState(TypedDict):
     node_path: list[str]
     events_emitted: list[ToolEventRef]
@@ -108,8 +109,8 @@ class AuditState(TypedDict):
 
 
 class VictusGraphState(TypedDict, total=False):
+    messages: Annotated[list[Any], add_messages]
     request: RequestState
-    session_context: SessionContextState
     safety: SafetyState
     intent: IntentState
     projections: ProjectionState
@@ -118,4 +119,6 @@ class VictusGraphState(TypedDict, total=False):
     evidence: EvidenceState
     clarification: ClarificationState
     response: ResponseState
+    memory: MemoryState
+    graph_version: str
     audit: AuditState

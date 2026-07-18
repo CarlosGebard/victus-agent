@@ -29,14 +29,54 @@ ALL_EXPOSURES = frozenset({"langgraph", "mcp", "cli", "test"})
 
 def _description(name: str) -> str:
     return {
-        "event_capture": "Capture meals, biometrics, symptoms, and lifestyle metrics.",
-        "profile_update": "Update durable user restrictions and preferences.",
-        "planning": "Record goals, planning sessions, revisions, and artifacts.",
-        "feedback": "Record or resolve user feedback.",
-        "evidence_answer": "Record grounded claims and citations.",
-        "clarification": "Request or resolve missing information.",
-        "confirmation": "Request or resolve confirmation for sensitive changes.",
-        "recuperar_perfil": "Recover the authenticated user's Victus profile.",
+        "event_capture": (
+            "Use when the user reports a concrete event that happened or is happening: a meal, "
+            "biometric measurement, symptom, or lifestyle metric such as sleep or exercise. "
+            "Capture the user's original meaning in normalized_text. Do not use for durable "
+            "preferences or restrictions, future goals or plans, feedback, or profile reads."
+        ),
+        "profile_update": (
+            "Use when the user asks to add, change, or remove durable profile information such as "
+            "an allergy, intolerance, dietary restriction, food preference, budget preference, "
+            "schedule preference, or cooking preference. Do not use for a meal or symptom that "
+            "occurred once, a future goal, feedback about a result, or reading the current profile."
+        ),
+        "planning": (
+            "Use for explicit planning lifecycle operations: set or adjust a health, weight, or "
+            "performance goal; start or end a planning session; create a plan revision; or save a "
+            "validated planning artifact. Do not use to log past meals or measurements, update "
+            "durable restrictions or preferences, or record the user's opinion about a plan."
+        ),
+        "feedback": (
+            "Use when the user evaluates or reacts to a specific plan, meal, recommendation, or "
+            "answer, or when recorded feedback must be resolved. Record the target and sentiment "
+            "when known. Do not use to revise the plan directly, capture a health event, or update "
+            "a durable profile preference unless a separate workflow explicitly does so."
+        ),
+        "evidence_answer": (
+            "Use to persist an already produced grounded claim or attach a citation to a claim, "
+            "including plan rationale, evidence answers, and safety explanations. Do not use to "
+            "search for sources, fabricate evidence, answer an ungrounded question, capture user "
+            "events, or update the user's profile or plan."
+        ),
+        "clarification": (
+            "Continuation mechanism for a workflow that cannot proceed because required information "
+            "is missing. Use action=request to record the missing fields and question, or "
+            "action=resolve to record the user's answer and resume the blocked workflow. Do not use "
+            "for general questions or when the intended action already has enough information."
+        ),
+        "confirmation": (
+            "Continuation mechanism for an identified action that requires explicit user approval "
+            "before execution. Use action=request to ask for approval, or action=resolve to record "
+            "the answer and resume the blocked action. Do not use without a specific pending action "
+            "and do not treat ordinary agreement or conversational yes/no answers as confirmation."
+        ),
+        "recuperar_perfil": (
+            "Use when the authenticated user asks to view or retrieve their current Victus profile "
+            "from the backend, including stored goals, restrictions, and preferences. This is a "
+            "read-only tool and takes no arguments. Do not use to modify the profile, infer a user "
+            "identity, or retrieve another user's profile."
+        ),
     }[name]
 
 

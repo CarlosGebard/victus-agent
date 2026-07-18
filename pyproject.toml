@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
   "alembic>=1,<2",
   "langgraph>=1,<2",
+  "langgraph-checkpoint-postgres>=3,<4",
   "langgraph-cli[inmem]>=0.4,<1",
   "httpx>=0.28,<1",
   "litellm>=1,<2",
@@ -22,6 +23,7 @@ dependencies = [
 victus = "adapters.cli:main"
 victus-mcp = "adapters.mcp.server:main"
 victus-mcp-http = "adapters.mcp.transport:main"
+victus-chat-http = "adapters.http.app:main"
 contracts = "ops.scripts.contracts:main"
 
 [project.optional-dependencies]

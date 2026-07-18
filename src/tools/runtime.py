@@ -84,7 +84,11 @@ class ToolRuntime:
         )
         input_data = definition.input_model.model_validate(invocation.arguments)
         input_user_id = getattr(input_data, "user_id", None)
-        if context.identity.subject and input_user_id != context.identity.subject:
+        if (
+            context.identity.subject
+            and input_user_id is not None
+            and input_user_id != context.identity.subject
+        ):
             raise ToolRuntimeError("invocation identity does not match user_id")
         if self._authorizer and not self._authorizer(definition, context):
             raise ToolRuntimeError(f"tool is not authorized: {definition.name}")

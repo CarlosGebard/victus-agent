@@ -2,15 +2,19 @@
 id: VICTUS-CONTRACT-SESSION-CONTEXT-V1
 contract_id: victus.contract.agent.session_context.v1
 title: Session Context V1
-status: draft
+status: superseded
 version: v1
 owner: victus-agent-runtime
 domain: agent
 contract_type: runtime_schema
 stability: experimental
 updated_at: 2026-06-14
+superseded_by: victus.contract.agent.chat.v1
 ---
 # Session Context V1
+
+This experimental contract is retained only as a migration reference. LangGraph checkpoints and
+Store replace active summary/pending writes; see `chat-v1.md`.
 
 ## 1. Purpose
 

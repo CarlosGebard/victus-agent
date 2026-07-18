@@ -6,7 +6,7 @@ from domain.projections.models.user_profile import (
     RestrictionView,
     UserProfileProjection,
 )
-from domain.projections.projectors._common import now_iso
+from domain.projections.projectors._common import now_iso, payload_dict
 
 USER_PROFILE_PROJECTOR = "user_profile"
 
@@ -20,8 +20,8 @@ def apply_user_profile_event(
         last_event_seq=0,
         updated_at=now_iso(),
     )
+    payload = payload_dict(event)
     if event.event_type == "restriction.added":
-        payload = event.payload
         restriction = RestrictionView(
             restriction_id=payload["restriction_id"],
             kind=payload["restriction_kind"],
@@ -38,7 +38,6 @@ def apply_user_profile_event(
         ]
         current.restrictions.append(restriction)
     elif event.event_type == "preference.updated":
-        payload = event.payload
         preference = PreferenceView(
             preference_id=payload["preference_id"],
             category=payload["category"],
@@ -51,7 +50,7 @@ def apply_user_profile_event(
         ]
         current.preferences.append(preference)
     elif event.event_type in {"goal.set", "goal.adjusted"}:
-        current.active_goal_id = event.payload["goal_id"]
+        current.active_goal_id = payload["goal_id"]
 
     current.last_event_seq = max(current.last_event_seq, event.event_seq)
     current.updated_at = now_iso()

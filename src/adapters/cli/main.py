@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import subprocess
 import sys
 
@@ -38,6 +39,10 @@ def main() -> int:
     run_parser.add_argument("arguments_json")
     subparsers.add_parser("db-upgrade", help="Run Alembic migrations to head.")
     subparsers.add_parser("db-current", help="Show current Alembic revision.")
+    subparsers.add_parser(
+        "langgraph-storage-setup",
+        help="Create or upgrade LangGraph checkpoint and Store tables.",
+    )
     subparsers.add_parser("smoke-event-store", help="Append and replay one local test event.")
     subparsers.add_parser("smoke-projections", help="Write and read one local projection row.")
     subparsers.add_parser("smoke-projectors", help="Replay one event into local projections.")
@@ -53,6 +58,16 @@ def main() -> int:
     safety_check_parser.add_argument("query", help="User prompt to evaluate.")
     rebuild_parser = subparsers.add_parser("projections-rebuild", help="Rebuild projections for a user.")
     rebuild_parser.add_argument("user_id")
+    intent_eval_parser = subparsers.add_parser(
+        "intent-eval",
+        help="Evaluate tool selection through LiteLLM without executing tools.",
+    )
+    intent_eval_parser.add_argument("--cases", default="ops/evals/mcp_intent_cases.json")
+    intent_eval_parser.add_argument(
+        "--model",
+        default=os.getenv("INTENT_EVAL_MODEL", "litellm_proxy/gemini-flash-lite"),
+    )
+    intent_eval_parser.add_argument("--user-id", default="mcp-smoke-user")
 
     args = parser.parse_args()
 
@@ -85,6 +100,8 @@ def main() -> int:
         return _run([sys.executable, "-m", "alembic", "-c", ALEMBIC_CONFIG, "upgrade", "head"])
     if args.command == "db-current":
         return _run([sys.executable, "-m", "alembic", "-c", ALEMBIC_CONFIG, "current"])
+    if args.command == "langgraph-storage-setup":
+        return _langgraph_storage_setup()
     if args.command == "smoke-event-store":
         return _smoke_event_store()
     if args.command == "smoke-projections":
@@ -97,6 +114,19 @@ def main() -> int:
         return _safety_check(args.query)
     if args.command == "projections-rebuild":
         return _projections_rebuild(args.user_id)
+    if args.command == "intent-eval":
+        from ops.scripts.mcp_intent_eval import main as intent_eval_main
+
+        return intent_eval_main(
+            [
+                "--cases",
+                args.cases,
+                "--model",
+                args.model,
+                "--user-id",
+                args.user_id,
+            ]
+        )
 
     parser.error(f"unknown command: {args.command}")
     return 2
@@ -213,6 +243,15 @@ def _smoke_event_store() -> int:
         return 1
 
     print(f"event_store_ok event_seq={appended.event_seq} event_id={appended.event_id}")
+    return 0
+
+
+def _langgraph_storage_setup() -> int:
+    from adapters.langgraph.persistence import setup_postgres_graph_storage
+    from victus_platform.database.engine import database_url
+
+    asyncio.run(setup_postgres_graph_storage(database_url()))
+    print("langgraph_storage_ok")
     return 0
 
 

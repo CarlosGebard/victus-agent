@@ -48,6 +48,67 @@ npx @modelcontextprotocol/inspector uv run victus-mcp
 In the client, verify discovery contains `event_capture`, `profile_update`, `planning`, `feedback`,
 `evidence_answer`, `clarification`, `confirmation`, and `recuperar_perfil`.
 
+# Agent Intent Selection With Codex
+
+MCP Inspector validates discovery and direct invocation, but it does not test agent selection because
+the operator chooses the tool. Use Codex as the MCP host to evaluate natural-language intent.
+
+After adding the server, verify that Codex sees it:
+
+```bash
+codex mcp list
+```
+
+Run one isolated case non-interactively. Keep the sandbox read-only so the evaluation cannot edit the
+repository; MCP tool side effects still depend on the configured server and database:
+
+```bash
+codex exec --ephemeral --json \
+  "Do not edit files. Act as the Victus assistant. For mutating Victus tools, the current test user_id is mcp-smoke-user. Process this user message using the victus-agent MCP tools only when appropriate: Hoy comi arroz con pollo."
+```
+
+The JSONL stream includes MCP tool-call events. Verify the selected tool, arguments, result status,
+and whether a tool call was correctly avoided. Use a new ephemeral execution for each independent
+case so earlier conversation does not reveal the expected route.
+
+Minimum intent matrix:
+
+| User message | Expected selection | Important exclusion |
+| --- | --- | --- |
+| `Hoy comi arroz con pollo` | `event_capture` | Not `profile_update` |
+| `Soy intolerante a la lactosa` | `profile_update` | Not `event_capture` |
+| `Quiero bajar de peso durante tres meses` | `planning` | Not `profile_update` |
+| `No me gusto el ultimo plan` | `feedback` | Do not revise the plan directly |
+| `Muestrame mi perfil actual` | `recuperar_perfil` | No `user_id` argument |
+| `Comi algo` | Clarification before capture | Do not persist an incomplete event |
+| `Si, confirmalo` without pending context | No confirmation | No tool call |
+| `Que puedes hacer?` | No mutating tool | No tool call |
+
+For each product case, record the input, expected tool or abstention, forbidden tools, required
+argument values, and expected result status. Test close paraphrases and ambiguous negative cases, not
+only the canonical phrase.
+
+## LiteLLM Selection-Only Evaluation
+
+Use the existing LiteLLM proxy to run the versioned intent matrix without invoking tools or writing
+events. Gemini credentials, rotation, and provider limits remain inside LiteLLM; Victus only receives
+the proxy URL and proxy key.
+
+```bash
+export LITELLM_PROXY_API_BASE=http://localhost:4000/v1
+export LITELLM_PROXY_API_KEY=<proxy-key>
+
+uv run victus intent-eval --model litellm_proxy/gemini-flash-lite
+```
+
+Do not commit or print the proxy key. The evaluator sends the canonical MCP names, descriptions, and
+JSON schemas to the model with `tool_choice=auto`. It reports selection, abstention, arguments, and
+whether `normalized_text` preserved the exact user input. It never calls `ToolRuntime`, MCP, or
+PostgreSQL.
+
+Cases live in `ops/evals/mcp_intent_cases.json`. A successful run exits `0`; selection failures exit
+`1`; invalid configuration or provider failures exit `2`.
+
 # HTTP MCP
 
 ```bash
@@ -137,3 +198,5 @@ idempotency key.
 - Safety-blocked calls persist nothing.
 - Authenticated reads never expose credentials.
 - Persisted event references match PostgreSQL.
+- Natural-language intent cases select the expected tool or correctly abstain.
+- Selected calls contain schema-valid arguments without inventing missing user facts.

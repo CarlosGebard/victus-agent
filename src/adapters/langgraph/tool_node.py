@@ -17,7 +17,9 @@ def tool_node(name: str, runtime: ToolRuntime):
             or ""
         )
         working_text = str(request.get("working_text") or normalize_text(original_text))
-        user_id = str(request.get("user_id") or "local-user")
+        user_id = str(request.get("user_id") or "")
+        if not user_id:
+            raise ValueError("authenticated user_id is required")
         result = runtime.invoke(
             ToolInvocation(
                 name=name,

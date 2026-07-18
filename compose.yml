@@ -1,3 +1,21 @@
+x-agent-service: &agent-service
+  image: victus-agent:local
+  build:
+    context: .
+  environment: &agent-environment
+    APP_ENV: ${APP_ENV:-local}
+    DATABASE_URL: postgresql+psycopg://victus:postgres@postgres:5432/victus_agent
+    BACKEND_API_URL: ${VICTUS_DOCKER_BACKEND_API_URL:-http://host.docker.internal:8000/v1}
+    LITELLM_PROXY_API_BASE: ${VICTUS_DOCKER_LITELLM_PROXY_API_BASE:-}
+    LITELLM_PROXY_API_KEY: ${LITELLM_PROXY_API_KEY:-}
+    LITELLM_KEY: ${LITELLM_KEY:-}
+    LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+    LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+    LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-victus-langgraph-local}
+    VICTUS_API_TOKEN: ${VICTUS_API_TOKEN:-}
+  extra_hosts:
+    - host.docker.internal:host-gateway
+
 services:
   postgres:
     image: postgres:16
@@ -6,7 +24,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: victus_agent
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - victus_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -14,6 +32,76 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+
+  db-migrate:
+    <<: *agent-service
+    command: ["uv", "run", "--no-sync", "python", "-m", "adapters.cli", "db-upgrade"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  langgraph-setup:
+    <<: *agent-service
+    command:
+      ["uv", "run", "--no-sync", "python", "-m", "adapters.cli", "langgraph-storage-setup"]
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  chat:
+    <<: *agent-service
+    command: ["uv", "run", "--no-sync", "python", "-m", "adapters.http.app"]
+    environment:
+      <<: *agent-environment
+      VICTUS_CHAT_HTTP_HOST: 0.0.0.0
+      VICTUS_CHAT_HTTP_PORT: 8766
+    ports:
+      - "${VICTUS_CHAT_HTTP_PORT:-8766}:8766"
+    depends_on:
+      langgraph-setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          ".venv/bin/python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8766/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+
+  mcp:
+    <<: *agent-service
+    command: ["uv", "run", "--no-sync", "python", "-m", "adapters.mcp.transport"]
+    environment:
+      <<: *agent-environment
+      VICTUS_MCP_HTTP_HOST: 0.0.0.0
+      VICTUS_MCP_HTTP_PORT: 8765
+    ports:
+      - "${VICTUS_MCP_HTTP_PORT:-8765}:8765"
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          ".venv/bin/python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8765/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
 
 volumes:
   victus_postgres_data:

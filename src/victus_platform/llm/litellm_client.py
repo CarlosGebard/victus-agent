@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from typing import Any
 
@@ -18,16 +19,17 @@ class LiteLLMClient:
         return await asyncio.to_thread(self.complete, request)
 
     def _kwargs(self, request: LLMRequest) -> dict[str, Any]:
+        proxy_base = os.getenv("LITELLM_PROXY_API_BASE")
         kwargs: dict[str, Any] = {
-            "model": request.model,
+            "model": _provider_model(request.model, proxy_configured=bool(proxy_base)),
             "messages": request.messages,
             "metadata": {"operation": request.operation, **request.metadata},
         }
 
         is_direct_groq_model = request.model.startswith("groq/")
 
-        if not is_direct_groq_model and (api_base := os.getenv("LITELLM_PROXY_API_BASE")):
-            kwargs["api_base"] = api_base.rstrip("/")
+        if not is_direct_groq_model and proxy_base:
+            kwargs["api_base"] = proxy_base.rstrip("/")
 
         api_key = (
             os.getenv("GROQ_API_KEY")
@@ -45,6 +47,10 @@ class LiteLLMClient:
             kwargs["max_tokens"] = request.max_tokens
         if request.response_format is not None:
             kwargs["response_format"] = request.response_format
+        if request.tools is not None:
+            kwargs["tools"] = request.tools
+        if request.tool_choice is not None:
+            kwargs["tool_choice"] = request.tool_choice
 
         return kwargs
 
@@ -58,4 +64,36 @@ class LiteLLMClient:
         message = choices[0].get("message") if choices else {}
         text = str((message or {}).get("content") or "")
         usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
-        return LLMResponse(text=text, raw=data, usage=usage)
+        return LLMResponse(
+            text=text,
+            raw=data,
+            usage=usage,
+            tool_calls=_tool_calls(message or {}),
+        )
+
+
+def _provider_model(model: str, *, proxy_configured: bool) -> str:
+    if proxy_configured and model.startswith("litellm_proxy/"):
+        return f"openai/{model.removeprefix('litellm_proxy/')}"
+    return model
+
+
+def _tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:
+    result = []
+    for call in message.get("tool_calls") or []:
+        function = call.get("function") if isinstance(call, dict) else None
+        if not isinstance(function, dict) or not function.get("name"):
+            continue
+        raw_arguments = function.get("arguments") or "{}"
+        try:
+            arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
+        except json.JSONDecodeError:
+            arguments = {"_invalid_json": raw_arguments}
+        result.append(
+            {
+                "id": call.get("id"),
+                "name": str(function["name"]),
+                "arguments": arguments if isinstance(arguments, dict) else {},
+            }
+        )
+    return result

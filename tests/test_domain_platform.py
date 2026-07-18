@@ -1,6 +1,7 @@
 from domain.events.envelope import EventActor, UserEventEnvelope
 from domain.events.nutrition import MealLoggedPayload
 from domain.projections.models import UserProfileProjection
+from domain.projections.projectors import apply_nutrition_status_event
 from victus_platform.repositories.events import _event_to_row, _row_to_event
 from victus_platform.safety.rules import SafetyPrecheck, SafetyPrecheckInput, evaluate_rules
 
@@ -31,6 +32,8 @@ def test_event_persistence_round_trip_and_projection_defaults() -> None:
     assert restored.event_id == event.event_id
     assert restored.idempotency_key == event.idempotency_key
     assert restored.payload.meal_id == "meal-1"
+    nutrition = apply_nutrition_status_event(None, restored)
+    assert nutrition.recent_meals[0].meal_id == "meal-1"
     assert projection.restrictions == []
 
 

@@ -1,0 +1,48 @@
+[
+  {
+    "id": "meal_capture",
+    "input": "Hoy comi arroz con pollo",
+    "expected_tool": "event_capture",
+    "exact_input_argument": "normalized_text"
+  },
+  {
+    "id": "profile_restriction",
+    "input": "Soy intolerante a la lactosa",
+    "expected_tool": "profile_update",
+    "exact_input_argument": "normalized_text"
+  },
+  {
+    "id": "planning_goal",
+    "input": "Quiero bajar de peso durante los proximos tres meses",
+    "expected_tool": "planning",
+    "expected_arguments": {"action": "set_goal", "primary_goal": "cut"}
+  },
+  {
+    "id": "plan_feedback",
+    "input": "No me gusto el ultimo plan",
+    "expected_tool": "feedback",
+    "expected_arguments": {"action": "record", "target_type": "plan"}
+  },
+  {
+    "id": "profile_read",
+    "input": "Muestrame mi perfil actual",
+    "expected_tool": "recuperar_perfil",
+    "expected_arguments": {}
+  },
+  {
+    "id": "incomplete_meal",
+    "input": "Comi algo",
+    "expected_tool": "event_capture",
+    "exact_input_argument": "normalized_text"
+  },
+  {
+    "id": "confirmation_without_context",
+    "input": "Si, confirmalo",
+    "expected_tool": null
+  },
+  {
+    "id": "capability_question",
+    "input": "Que puedes hacer?",
+    "expected_tool": null
+  }
+]

@@ -22,11 +22,11 @@ important, capture it in an ADR or issue instead of expanding this document.
 Current active contracts:
 
 - LangGraph state shape: `src/adapters/langgraph/state.py`
+- authenticated chat API and bounded memory: `src/adapters/langgraph/contracts.py`
 - tool invocation/result models: `src/tools/contracts.py`
 - tool catalog: `src/tools/catalog.py`
 - event models: `src/domain/events/`
 - projection models: `src/domain/projections/models/`
-- session context models: `src/domain/session_context/models.py`
 - database schema: `src/victus_platform/database/schema.py`
 - migrations: `ops/db/migrations/`
 - MCP tool exposure: `src/adapters/mcp/server.py`
@@ -45,13 +45,17 @@ Primary contract indexes:
 
 - User history: immutable events.
 - Current read state: projections rebuilt from events.
-- Conversation continuity: compact session context.
+- Conversation continuity: LangGraph checkpoints scoped by owned `thread_id`.
+- Cross-thread conversational memory: bounded Store namespaces rooted in authenticated user.
 - Graph execution: LangGraph state.
 - Tool boundary: `ToolRuntime` returning `ToolResult` to every adapter.
 - MCP transports: local stdio and deployable Streamable HTTP expose the same registered tool
   surface.
 
 LangGraph checkpoints, LLM outputs, and response text are not canonical user history.
+
+The V1 chat request/response, interrupt, identity, and memory invariants are documented in
+`docs/contracts/chat-v1.md`.
 
 ## Active Tool Names
 

@@ -20,8 +20,8 @@ src/victus_platform/   database, repositories, LLM, safety, identity, config, te
 src/bootstrap/         dependency assembly
 ```
 
-`victus_platform` uses a qualified name because Python's standard library already owns the
-top-level module name `platform`.
+LangGraph owns orchestration state through checkpoints and bounded cross-thread conversational
+memory through Store. Domain events and projections remain separate authoritative persistence.
 
 # Components
 
@@ -44,7 +44,9 @@ session context, and small cross-capability invariants. It does not own tools or
 
 ## Adapters
 
-- LangGraph owns conversational state, routing, cycles, interruption, and response composition.
+- LangGraph owns conversational state, model decisions, bounded cycles, interruption, and response
+  composition. Production uses PostgreSQL saver/store; tests inject in-memory implementations.
+- HTTP exposes authenticated non-streaming chat and enforces thread ownership before invoke/resume.
 - MCP owns discovery, authentication, transport, invocation mapping, and serialization.
 - CLI owns local commands, authentication, and rendering.
 
@@ -70,6 +72,10 @@ adapter request
   -> adapter mapping
 ```
 
+The chat graph runs `ingest -> recall -> projections -> safety -> decision -> optional interrupt ->
+tool execution -> response -> memory update -> finalize`. Successful event persistence applies the
+affected projection in the same database transaction before the tool reports success.
+
 The event store remains user-history truth. Projections remain rebuildable. LangGraph state is
 orchestration state only.
 
@@ -82,8 +88,9 @@ orchestration state only.
 
 # External Dependencies
 
-PostgreSQL persists events, projections, and session context. MCP and LangGraph provide access and
-orchestration. LLM providers and the Victus web backend are reached through platform adapters.
+PostgreSQL persists events, projections, LangGraph checkpoints, and Store documents. MCP and the chat
+API remain separate access boundaries. LiteLLM supplies model decisions and the Victus backend
+validates incoming bearer identities.
 
 # Related Documentation
 

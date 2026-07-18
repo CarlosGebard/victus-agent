@@ -6,7 +6,7 @@ from domain.projections.models.planning_history import (
     PlanningHistoryProjection,
     RevisionSummary,
 )
-from domain.projections.projectors._common import now_iso
+from domain.projections.projectors._common import now_iso, payload_dict
 
 PLANNING_HISTORY_PROJECTOR = "planning_history"
 
@@ -20,7 +20,7 @@ def apply_planning_history_event(
         last_event_seq=0,
         updated_at=now_iso(),
     )
-    payload = event.payload
+    payload = payload_dict(event)
     if event.event_type in {"goal.set", "goal.adjusted"}:
         current.active_goal_id = payload["goal_id"]
     elif event.event_type == "plan.session_started":

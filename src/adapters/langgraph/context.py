@@ -10,6 +10,7 @@ from adapters.langgraph.prompts.compose_response import (
 from victus_platform.llm.contracts import LLMClient, LLMRequest
 from domain.shared.text import normalize_text
 from tools.catalog import list_tools
+from victus_platform.safety.rules import SafetyPrecheck, SafetyPrecheckInput
 
 
 def normalize_request(state: VictusGraphState) -> VictusGraphState:
@@ -38,6 +39,29 @@ def safety_precheck(*, llm_client: LLMClient | None = None, model: str | None = 
             or ""
         )
         if not llm_client or not model:
+            local = SafetyPrecheck().check(
+                SafetyPrecheckInput(
+                    original_text=str(request.get("original_text") or text),
+                    working_text=text,
+                )
+            )
+            if local.decision != "allow":
+                return _merge(
+                    state,
+                    safety={
+                        "status": "blocked",
+                        "reasons": local.reason_codes,
+                        "decision": local.decision,
+                        "severity": local.severity,
+                        "categories": local.categories,
+                        "matched_rules": local.matched_rules,
+                        "reason_codes": local.reason_codes,
+                        "blocked_tools": local.blocked_tools,
+                        "allowed_next_route": local.allowed_next_route,
+                        "audit_required": local.audit_required,
+                    },
+                    node_name="safety_precheck",
+                )
             return _merge(state, safety=_allowed_safety(), node_name="safety_precheck")
 
         result = llm_client.complete(

@@ -1,8 +1,9 @@
 ---
 id: ADR-20260614-SESSION-CONTEXT-MANAGEMENT
 title: Session Context Management
-status: accepted
+status: superseded
 date: 2026-06-14
+superseded_by: ADR-20260718-LANGGRAPH-MEMORY-PERSISTENCE
 owners:
   - victus-agent-runtime
 ---

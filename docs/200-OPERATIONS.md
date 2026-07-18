@@ -11,18 +11,24 @@ owners:
 
 ## Local Setup
 
-Use `uv` as the project runner.
-
-The local database is PostgreSQL from `compose.yml`:
-
-```bash
-docker compose up -d postgres
-```
-
-Environment example:
+Create the environment file once and configure the external backend and LiteLLM proxy:
 
 ```bash
 cp .env.example .env
+```
+
+Start the dependency-ordered local stack:
+
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+Compose starts PostgreSQL, runs domain migrations and LangGraph storage setup to completion, then
+starts chat on port `8766` and MCP on port `8765`. Stop the stack without deleting data with:
+
+```bash
+docker compose down
 ```
 
 The default local database URL is:
@@ -76,6 +82,7 @@ Migrations live under `ops/db/`.
 ```bash
 uv run victus db-upgrade
 uv run victus db-current
+uv run victus langgraph-storage-setup
 ```
 
 Smoke checks:
@@ -186,6 +193,19 @@ uv run victus graph-dev --no-browser --port 2024
 
 `LANGSMITH_API_KEY` is only needed for LangGraph Studio/LangSmith-backed visualization.
 
+## Chat API
+
+Outside Compose, the authenticated JSON chat service can still run directly:
+
+```bash
+uv run victus-chat-http
+curl http://localhost:8766/health
+```
+
+Compose handles `langgraph-storage-setup` automatically. Direct deployments must run it before
+starting chat. See `docs/runbooks/langgraph-chat.md` for request, resume, recovery, and
+troubleshooting procedures.
+
 ## Configuration
 
 Runtime config:
@@ -198,13 +218,24 @@ Environment variables used locally:
 
 ```text
 APP_ENV
+BACKEND_API_URL
 DATABASE_URL
 LITELLM_PROXY_API_BASE
 LITELLM_PROXY_API_KEY
 LITELLM_KEY
+INTENT_EVAL_MODEL
 GROQ_API_KEY
 GROQ_TRANSLATION_MODEL
 LANGSMITH_API_KEY
+LANGSMITH_PROJECT
+LANGSMITH_TRACING
+POSTGRES_PORT
+VICTUS_DOCKER_BACKEND_API_URL
+VICTUS_DOCKER_LITELLM_PROXY_API_BASE
+VICTUS_MCP_HTTP_PORT
+VICTUS_API_TOKEN
+VICTUS_CHAT_HTTP_HOST
+VICTUS_CHAT_HTTP_PORT
 ```
 
 Do not commit secrets or print `.env` contents.

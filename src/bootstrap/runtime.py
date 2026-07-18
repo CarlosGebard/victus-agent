@@ -19,10 +19,28 @@ def event_store_scope() -> Iterator[object | None]:
 
     from victus_platform.database.engine import build_engine
     from victus_platform.repositories.events import PostgresEventStore
+    from victus_platform.repositories.projections import ProjectionRepository
 
     engine = build_engine()
     with engine.begin() as connection:
-        yield PostgresEventStore(connection)
+        yield _ProjectingEventStore(
+            PostgresEventStore(connection),
+            ProjectionRepository(connection),
+        )
+
+
+@contextmanager
+def projection_repository_scope() -> Iterator[object | None]:
+    if not os.getenv("DATABASE_URL"):
+        yield None
+        return
+
+    from victus_platform.database.engine import build_engine
+    from victus_platform.repositories.projections import ProjectionRepository
+
+    engine = build_engine()
+    with engine.begin() as connection:
+        yield ProjectionRepository(connection)
 
 
 def build_runtime() -> ToolRuntime:
@@ -48,3 +66,36 @@ def safety_precheck(input_data, context) -> ToolResult | None:
         safety=ToolSafety(status="blocked", reasons=result.reason_codes),
         meta=ToolMeta(trace_id=context.trace_id),
     )
+
+
+class _ProjectingEventStore:
+    def __init__(self, event_store, projections) -> None:
+        self._event_store = event_store
+        self._projections = projections
+
+    def append(self, event):
+        from domain.projections.registry import PROJECTION_REGISTRY
+
+        appended = self._event_store.append(event)
+        loaders = {
+            "user_profile": self._projections.get_user_profile,
+            "constraint": self._projections.get_constraint,
+            "nutrition_status": self._projections.get_nutrition_status,
+            "planning_history": self._projections.get_planning_history,
+        }
+        savers = {
+            "user_profile": self._projections.save_user_profile,
+            "constraint": self._projections.save_constraint,
+            "nutrition_status": self._projections.save_nutrition_status,
+            "planning_history": self._projections.save_planning_history,
+        }
+        for name, definition in PROJECTION_REGISTRY.items():
+            if appended.event_type not in definition.events:
+                continue
+            projection = definition.apply(loaders[name](appended.user_id), appended)
+            savers[name](projection)
+            sequence = getattr(projection, "last_event_seq", None)
+            if sequence is None:
+                sequence = projection.derived_from_event_seq
+            self._projections.save_offset(name, sequence)
+        return appended
