@@ -2,13 +2,13 @@
 
 Runtime repository for the Victus agent prototype.
 
-The current codebase implements the first runtime slice, not the full nutrition product:
+The current codebase implements a tool-first runtime slice, not the full nutrition product:
 
 - a minimal LangGraph with normalization, safety precheck, blocked response, and `event_capture`
 - compact session context
-- static tool registration
-- two typed tool handlers: `event_capture` and `profile_update`
-- local MCP stdio server and deployable MCP HTTP server for those tools
+- one catalog and runtime shared by every tool surface
+- vertical tools for capture, profile, planning, feedback, evidence, and interaction
+- LangGraph, MCP stdio/HTTP, and CLI adapters
 - event, projection, session-context, and tool result models
 - PostgreSQL repositories and Alembic migrations under `ops/db/`
 - local CLI commands under `uv run victus ...`
@@ -24,18 +24,14 @@ Implemented enough to validate the first graph node, tool classification, MCP ex
 database repositories, and projection rebuild behavior. Not yet implemented as a complete
 end-to-end nutrition coach.
 
-Known gap: the test suite currently references a `safety` package that is not present in the
-working tree.
-
 ## Repository Map
 
 ```text
-src/agent/            LangGraph graph, state, and nodes
-src/application/      config, ports, tools, MCP client, projection services
-src/domain/           pure models and contracts
-src/infrastructure/   database, repositories, LLM adapters
-src/victus_cli/       local operational CLI
-src/victus_mcp/       local MCP stdio server and deployable MCP HTTP server
+src/tools/            capabilities, catalog, shared contracts, runtime
+src/domain/           events, projections, session context, shared invariants
+src/adapters/         LangGraph, MCP, and CLI adapters
+src/victus_platform/  database, repositories, LLM, safety, identity, config, telemetry
+src/bootstrap/        dependency assembly
 ops/db/               Alembic config and migrations
 ops/scripts/          helper scripts
 config/               runtime config
@@ -90,3 +86,5 @@ Read in this order:
 
 Detailed contracts live under [`docs/contracts/`](docs/contracts/). Avoid adding new planning
 docs unless the current code or a stable contract changes.
+
+MCP tool testing: [`docs/runbooks/mcp-tool-testing.md`](docs/runbooks/mcp-tool-testing.md).

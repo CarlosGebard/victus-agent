@@ -19,4 +19,4 @@ COPY src ./src
 
 EXPOSE 8765
 
-CMD ["uv", "run", "--no-sync", "python", "-m", "victus_mcp.http_server"]
+CMD ["uv", "run", "--no-sync", "python", "-m", "adapters.mcp.transport"]

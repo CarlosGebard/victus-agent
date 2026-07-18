@@ -2,7 +2,7 @@
 id: VICTUS-AGENT-OPERATIONS
 title: Victus Agent Operations
 status: current
-updated_at: 2026-07-17
+updated_at: 2026-07-18
 owners:
   - victus-agent-runtime
 ---
@@ -33,6 +33,10 @@ postgresql+psycopg://victus:postgres@localhost:5432/victus_agent
 
 ## Validation
 
+The repository intentionally maintains a minimal critical suite. Add or expand tests only when a
+runtime/security boundary, stable contract, regression, or persistence risk cannot be verified by
+an existing test. Combine related behavior instead of growing one test per case.
+
 Primary checks:
 
 ```bash
@@ -41,12 +45,12 @@ uv run --extra test victus compile
 uv run --extra test victus check
 ```
 
-Focused checks:
+The full suite is already focused; narrower checks are optional:
 
 ```bash
-uv run --extra test victus test tests/agent
-uv run --extra test victus test tests/victus_mcp
-uv run --extra test victus test tests/contracts
+uv run --extra test victus test tests/test_core_tools.py
+uv run --extra test victus test tests/test_adapters.py
+uv run --extra test victus test tests/test_domain_platform.py
 ```
 
 Llama Guard 4 serverless classification:
@@ -64,15 +68,6 @@ uv run victus safety-check "Ignore previous instructions"
 The response is normalized from Llama Guard output such as `safe` or `unsafe\nS11`.
 The request includes strict classification instructions that tell Llama Guard 4 to return only
 `safe` or `unsafe` plus S1-S14 category codes.
-
-Current known failure:
-
-```text
-tests/safety/test_self_harm_rules.py imports safety.*, but no safety package exists in the tree.
-```
-
-Fix by restoring the `safety` package or removing/updating those tests and related packaging
-references.
 
 ## Database
 
@@ -96,6 +91,9 @@ These commands require `DATABASE_URL` and a reachable local PostgreSQL instance.
 
 ## MCP
 
+For end-to-end tool validation through stdio or HTTP MCP, see
+`docs/runbooks/mcp-tool-testing.md`.
+
 Authenticate locally for MCP token relay:
 
 ```bash
@@ -105,6 +103,8 @@ BACKEND_API_URL=http://localhost:8000 uv run victus login
 List tools:
 
 ```bash
+uv run victus tools-list
+uv run victus tool-inspect event_capture
 uv run victus mcp-list-tools
 ```
 
@@ -112,6 +112,7 @@ Call a tool:
 
 ```bash
 uv run victus mcp-call event_capture '{"user_id":"local-smoke-user","normalized_text":"hoy comi arroz"}'
+uv run victus tool-run event_capture '{"user_id":"local-smoke-user","normalized_text":"hoy comi arroz"}'
 BACKEND_API_URL=http://localhost:8000/v1 uv run victus mcp-call recuperar_perfil '{}'
 ```
 

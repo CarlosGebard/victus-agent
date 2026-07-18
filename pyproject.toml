@@ -19,9 +19,9 @@ dependencies = [
 ]
 
 [project.scripts]
-victus = "victus_cli:main"
-victus-mcp = "victus_mcp.server:main"
-victus-mcp-http = "victus_mcp.http_server:main"
+victus = "adapters.cli:main"
+victus-mcp = "adapters.mcp.server:main"
+victus-mcp-http = "adapters.mcp.transport:main"
 contracts = "ops.scripts.contracts:main"
 
 [project.optional-dependencies]
@@ -60,12 +60,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = [
-  "src/agent",
-  "src/application",
+  "src/adapters",
+  "src/bootstrap",
   "src/domain",
-  "src/infrastructure",
-  "src/victus_cli",
-  "src/victus_mcp",
-  "safety",
+  "src/tools",
+  "src/victus_platform",
   "ops",
 ]

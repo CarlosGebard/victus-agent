@@ -2,155 +2,91 @@
 id: VICTUS-AGENT-ARCHITECTURE
 title: Victus Agent Architecture
 status: current
-updated_at: 2026-07-17
+updated_at: 2026-07-18
 owners:
   - victus-agent-runtime
 ---
 
-# Victus Agent Architecture
+# Architectural Overview
 
-## Shape
-
-The repository is organized as a small layered Python runtime:
-
-```text
-src/domain/             pure contracts and models
-src/application/        config, ports, tools, MCP client, projection services
-src/infrastructure/     database, repositories, provider adapters
-src/agent/              LangGraph orchestration
-src/victus_cli/         local CLI
-src/victus_mcp/         MCP stdio and HTTP servers
-```
-
-The current runtime flow is:
+Victus is a tool-first Python runtime. A capability has one implementation and one catalog entry;
+LangGraph, MCP, CLI, and tests are access adapters around the same `ToolRuntime`.
 
 ```text
-request
-  -> normalize_request
-  -> safety_precheck
-     -> safety_blocked_response
-     -> event_capture
+src/tools/             public capabilities, catalog, contracts, runtime
+src/domain/            shared events, projections, session context, invariants
+src/adapters/          LangGraph, MCP, and CLI translation
+src/victus_platform/   database, repositories, LLM, safety, identity, config, telemetry
+src/bootstrap/         dependency assembly
 ```
 
-## Graph
+`victus_platform` uses a qualified name because Python's standard library already owns the
+top-level module name `platform`.
 
-The graph is built in `src/agent/graph.py`.
-
-Current graph nodes:
-
-- `normalize_request`: normalizes the request text and writes `request.working_text`.
-- `safety_precheck`: writes `safety`; without an injected guard client it defaults to allow.
-- `safety_blocked_response`: writes a blocked user warning and exposes no tools.
-- `event_capture`: calls the application tool boundary for `event_capture` and stores the
-  returned `ToolResult` envelope in graph state for allowed requests.
-
-The graph does not currently execute tool side effects or append user events by itself.
-
-Context bootstrap, response composition, and session summary modules still exist in the codebase,
-but they are intentionally not wired into the visual graph while the first tool path is being
-developed.
+# Components
 
 ## Tools
 
-The active tool registry is static and lives in `src/application/tools/registry.py`.
+`tools/catalog.py` is the executable source of public metadata, schemas, exposure, risk, side
+effects, identity requirements, and implementation references. Tool folders own their contracts,
+policy, actions, and public `tool.py` entrypoint.
 
-Active tool names:
+`tools/runtime.py` validates invocations, creates trace context, checks exposure, identity and
+authorization, runs optional safety prechecks, executes the implementation, applies invocation
+idempotency, persists emitted events, and returns `ToolResult`.
 
-- `event_capture`
-- `profile_update`
-- `recuperar_perfil`
+Clarification and confirmation live under `tools/interaction/` as continuation mechanisms.
 
-Handlers live in `src/application/tools/handlers.py`. They validate Pydantic input, run the
-corresponding domain tool policy, validate the decision, and return a `ToolResult`.
+## Domain
 
-Current local classification handlers classify and validate decisions. They do not persist user
-events. `recuperar_perfil` is a remote read-only tool that relays the local user token to the web
-backend and does not write events.
+The domain owns immutable event contracts, rebuildable projection models/projectors, shared
+session context, and small cross-capability invariants. It does not own tools or adapters.
 
-Tool input/decision models, event mappings, validation rules, skill metadata, and deterministic
-policies live under `src/domain/tools/`. Graph-node modules must not duplicate those contracts.
+## Adapters
 
-## MCP Boundary
+- LangGraph owns conversational state, routing, cycles, interruption, and response composition.
+- MCP owns discovery, authentication, transport, invocation mapping, and serialization.
+- CLI owns local commands, authentication, and rendering.
 
-`src/victus_mcp/server.py` exposes the active visible tools over stdio using the MCP package.
-This is the local-user/Codex desktop transport.
+Adapters never import tool actions or repositories directly for functional execution.
 
-`src/victus_mcp/http_server.py` exposes the same tools over Streamable HTTP at `/mcp`, with
-`/health` for infrastructure checks. This is the deployable transport intended for web-app or
-service-to-service LangGraph integrations.
+## Platform And Bootstrap
 
-Local smoke commands:
+The platform implements technical capabilities. Bootstrap constructs repository scopes and the
+shared runtime; adapters receive that configured runtime.
 
-```bash
-uv run victus mcp-list-tools
-uv run victus mcp-call event_capture '{"user_id":"local-smoke-user","normalized_text":"hoy comi arroz"}'
-uv run victus-mcp
-uv run victus-mcp-http
+# Runtime Flow
+
+```text
+adapter request
+  -> ToolInvocation
+  -> ToolRuntime
+  -> catalog lookup and contract validation
+  -> identity / authorization / safety checks
+  -> capability tool.py
+  -> domain events
+  -> event repository
+  -> ToolResult
+  -> adapter mapping
 ```
 
-Codex can connect to this stdio server with:
+The event store remains user-history truth. Projections remain rebuildable. LangGraph state is
+orchestration state only.
 
-```bash
-codex mcp add victus-agent -- uv run victus-mcp
-```
+# Boundaries
 
-`recuperar_perfil` reads `VICTUS_API_TOKEN` from the environment first for development override,
-then reads OAuth tokens from `~/.victus/session.json`, refreshes when possible, and forwards the
-access token to `GET {BACKEND_API_URL}/me`.
+- Tools must not import LangGraph, MCP, CLI, bootstrap, or concrete repositories.
+- Adapters call only the runtime for functional tool execution.
+- Platform must not contain business decisions owned by a tool.
+- Catalog metadata must not be duplicated in manifests or adapter registries.
 
-For deployed HTTP MCP usage, production authentication should be supplied by the calling service or
-web-app boundary rather than relying on local `~/.victus/session.json` files.
+# External Dependencies
 
-LangGraph services can consume the HTTP MCP endpoint with `langchain-mcp-adapters` using a
-configuration like:
+PostgreSQL persists events, projections, and session context. MCP and LangGraph provide access and
+orchestration. LLM providers and the Victus web backend are reached through platform adapters.
 
-```python
-MultiServerMCPClient({
-    "victus": {
-        "transport": "http",
-        "url": "http://victus-agent:8765/mcp",
-    }
-})
-```
+# Related Documentation
 
-## Persistence
-
-Database support is implemented with SQLAlchemy/psycopg and Alembic.
-
-Key modules:
-
-- `src/infrastructure/db/engine.py`
-- `src/infrastructure/db/schema.py`
-- `src/infrastructure/repositories/events.py`
-- `src/infrastructure/repositories/projections.py`
-- `src/infrastructure/repositories/session_context.py`
-- `ops/db/alembic.ini`
-- `ops/db/migrations/`
-
-Events are canonical. Projection rebuilds are application services in
-`src/application/projections/runner.py`.
-
-## LLM Boundary
-
-Application code depends on the `LLMClient` port in `src/application/ports/llm.py`.
-
-Provider-specific LiteLLM code lives under `src/infrastructure/llm/`.
-
-Graph nodes may receive an `LLMClient`, but should not import provider clients directly.
-
-## Not Implemented Yet
-
-These concepts appear in domain models or older contracts, but are not active runtime branches:
-
-- semantic intent router
-- multi-node graph orchestration
-- context bootstrap branch in the visual graph
-- response composition branch in the visual graph
-- full diet planning
-- plan revision
-- weekly review
-- evidence/RAG answer path
-- production API/auth boundary
-- end-to-end tool execution that writes events
-
-Do not document those as active behavior until code exists.
+- `docs/200-OPERATIONS.md`
+- `docs/300-CONTRACTS.md`
+- `docs/adr/20260718-tool-first-runtime.md`

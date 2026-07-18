@@ -2,81 +2,49 @@
 id: VICTUS-AGENT-SYSTEM-CONTEXT
 title: Victus Agent System Context
 status: current
-updated_at: 2026-07-12
+updated_at: 2026-07-18
 owners:
   - victus-agent-runtime
 ---
 
-# Victus Agent System Context
+# Purpose
 
-## Purpose
+`victus-agent` is the runtime foundation for Victus lifestyle capabilities. It exposes one
+implementation of each public tool through LangGraph, MCP, CLI, and tests.
 
-`victus-agent` is the runtime foundation for a future Victus lifestyle agent.
+# Current Scope
 
-Today it provides a small, testable spine:
+- Shared tool catalog, invocation/result contracts, runtime, tracing, and event persistence.
+- Tools for event capture, profile, planning, feedback, evidence, and interaction continuation.
+- LangGraph orchestration with normalization and safety routing.
+- MCP stdio/HTTP discovery and invocation.
+- Local CLI execution, auth, database operations, and validation.
+- PostgreSQL events, projections, and session context.
 
-- normalize and carry a user request through a LangGraph graph
-- run a safety precheck before tool exposure
-- preserve compact session context
-- expose typed backend tools through a static registry
-- expose those tools through a local MCP stdio server
-- model immutable user events and rebuildable projections
-- provide local CLI and database smoke checks
+Full coaching, semantic routing, production authorization, provider sync, and medical diagnosis
+remain outside the current runtime slice.
 
-It is not yet a complete nutrition planner, evidence system, mobile API, or production auth
-boundary.
-
-## Current Scope
-
-Implemented scope:
-
-- graph nodes: safety precheck, request normalization, context bootstrap, tool registry,
-  deterministic/LLM response composition, self-harm response, session summary
-- tools: `event_capture`, `profile_update`
-- persistence support: event store repository, projection repository, session context repository
-- operations: Alembic migrations, projection rebuild, smoke commands, MCP list/call commands
-
-Out of current scope:
-
-- full diet-plan generation
-- plan revision workflows
-- weekly review
-- evidence/RAG answers
-- semantic intent router
-- production API and auth provider integration
-- wearable/provider sync
-- medical diagnosis or treatment
-
-## Core Concepts
+# Core Concepts
 
 | Concept | Meaning |
 |---|---|
-| User event | Immutable fact about a user. This is the historical source of truth. |
+| Tool | Vertical product capability with one implementation. |
+| Catalog | Executable source of public metadata and implementation binding. |
+| ToolRuntime | Only functional execution boundary for every adapter. |
+| User event | Immutable user-history fact. |
 | Projection | Rebuildable read model derived from events. |
-| LangGraph state | Temporary orchestration state for a single graph run. |
-| Session context | Compact conversation memory, not domain truth. |
-| Tool registry | Static list of tools allowed after safety precheck. |
-| Tool handler | Typed backend classifier/handler that validates input and returns `ToolResult`. |
-| MCP server | Local stdio boundary exposing the same tool surface to MCP clients. |
+| LangGraph state | Temporary conversational orchestration state. |
+| Interaction | Clarification or confirmation needed to continue execution. |
 
-## Design Rules
+# Design Rules
 
-- The LLM is never the source of truth.
-- Do not write directly to projections from agent nodes.
-- Do not derive identity from free text.
-- Do not expose mutating tools when safety blocks the turn.
-- Prefer typed tool handlers over model-generated side effects.
-- Keep docs tied to current code or stable contracts.
+- Tools never depend on LangGraph, MCP, CLI, bootstrap, or concrete repositories.
+- Adapters never call internal actions or repositories for tool execution.
+- Identity is adapter-resolved and runtime-checked, never inferred from free text.
+- The event store is historical truth; projections and graph state are not.
+- Public names remain stable and contracts are versioned.
 
-## Documentation Map
+# Documentation Map
 
-```text
-README.md                  repository entrypoint
-docs/000-SYSTEM-CONTEXT.md purpose, scope, concepts
-docs/100-ARCHITECTURE.md   implemented runtime shape
-docs/200-OPERATIONS.md     local commands and validation
-docs/300-CONTRACTS.md      active contracts and compatibility notes
-docs/contracts/            detailed schema/model references
-docs/adr/                  decisions that still matter
-docs/runbooks/             operational runbooks
-```
+`README.md` is the entrypoint; architecture, operations, and contracts are under `docs/`; durable
+decisions live under `docs/adr/`; each capability has a local README under `src/tools/`.

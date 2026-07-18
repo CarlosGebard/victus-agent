@@ -1,1 +1,0 @@
-"""Victus MCP server package."""

@@ -18,7 +18,7 @@ Do not commit the endpoint token. `CHROMA_DB_PATH` optionally overrides the defa
 ## First 10,000-row run
 
 ```bash
-uv run --extra safety-index python -m infrastructure.safety_similarity
+uv run --extra safety-index python -m victus_platform.safety.similarity
 ```
 
 The command prints two compact dataset rows before the first endpoint request, streams the `train`
@@ -45,7 +45,7 @@ Training reads the persisted vectors locally and makes no endpoint calls:
 
 ```bash
 uv run --extra safety-index --extra safety-training \
-  python -m infrastructure.safety_classifier train
+  python -m victus_platform.safety.classifier train
 ```
 
 The command excludes topic-following and image-dependent rows, creates deterministic 70/15/15
@@ -58,7 +58,7 @@ bulk endpoint may be paused:
 
 ```bash
 uv run --env-file .env --extra safety-index \
-  python -m infrastructure.safety_classifier query "How can I steal money?"
+  python -m victus_platform.safety.classifier query "How can I steal money?"
 ```
 
 The runtime calls `feature_extraction` because the logistic model requires a 1024-dimensional

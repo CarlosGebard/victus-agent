@@ -3,7 +3,7 @@ id: VICTUS-AGENT-CONTRACTS
 title: Victus Agent Contracts
 status: current
 version: v1
-updated_at: 2026-07-17
+updated_at: 2026-07-18
 owners:
   - victus-agent-runtime
 ---
@@ -21,17 +21,25 @@ important, capture it in an ADR or issue instead of expanding this document.
 
 Current active contracts:
 
-- LangGraph state shape: `src/agent/state.py`
-- tool result model: `src/domain/tools/models.py`
-- event models: `src/domain/events/models.py`
-- projection models: `src/domain/projections/models.py`
+- LangGraph state shape: `src/adapters/langgraph/state.py`
+- tool invocation/result models: `src/tools/contracts.py`
+- tool catalog: `src/tools/catalog.py`
+- event models: `src/domain/events/`
+- projection models: `src/domain/projections/models/`
 - session context models: `src/domain/session_context/models.py`
-- database schema: `src/infrastructure/db/schema.py`
+- database schema: `src/victus_platform/database/schema.py`
 - migrations: `ops/db/migrations/`
-- MCP tool exposure: `src/victus_mcp/server.py`
-- MCP HTTP exposure: `src/victus_mcp/http_server.py`
+- MCP tool exposure: `src/adapters/mcp/server.py`
+- MCP HTTP exposure: `src/adapters/mcp/transport.py`
 
 Detailed reference docs remain under `docs/contracts/`.
+
+Primary contract indexes:
+
+- tools: `docs/contracts/tools/README.md`
+- events: `docs/contracts/events/README.md`
+- projections: `docs/contracts/projections/README.md`
+- future tool design: `docs/contracts/future-tools/README.md`
 
 ## Source of Truth
 
@@ -39,7 +47,7 @@ Detailed reference docs remain under `docs/contracts/`.
 - Current read state: projections rebuilt from events.
 - Conversation continuity: compact session context.
 - Graph execution: LangGraph state.
-- Tool boundary: MCP-exposed typed handlers returning `ToolResult`.
+- Tool boundary: `ToolRuntime` returning `ToolResult` to every adapter.
 - MCP transports: local stdio and deployable Streamable HTTP expose the same registered tool
   surface.
 
@@ -52,21 +60,32 @@ The current registry exposes:
 ```text
 event_capture
 profile_update
+planning
+feedback
+evidence_answer
+clarification
+confirmation
 recuperar_perfil
 ```
 
 Registry rules:
 
 - safety-blocked turns expose no tools
-- handlers validate input with Pydantic models
-- handlers return `ToolResult`
-- current local classification handlers classify/validate and do not persist events
+- the runtime validates input with the catalog's Pydantic model
+- all adapters receive `ToolResult`
+- `event_capture` classifies/validates fast-changing user data and can emit supported
+  non-safety-blocked capture events when an event store is available
+- `profile_update` classifies/validates durable profile changes and can emit
+  non-safety-blocked `restriction.added` and `preference.updated` events for supported actions when
+  an event store is available
+- `planning`, `feedback`, `evidence_answer`, `clarification`, and `confirmation` validate
+  structured action input and can emit their contracted V1 events when an event store is available
 - `recuperar_perfil` reads a local OAuth access token, refreshes it when possible, and performs a
   read-only backend request to `/me`
 - adding or renaming a tool is a contract change
 
-Tool-specific input/decision contracts live in `src/domain/tools/`. Node-local schema,
-validator, or skill-manifest copies are not contract sources.
+Tool-specific contracts live in `src/tools/<tool>/contract.py`. Adapter-local schemas, registries,
+manifests, and action mappings are not contract sources.
 
 ## Current `ToolResult`
 
@@ -76,7 +95,7 @@ Implemented model:
 type ToolResult = {
   status: "success" | "needs_clarification" | "blocked" | "rejected" | "error"
   data?: unknown
-  events_emitted: Array<{ event_id: string; event_type: string; event_seq: number }>
+  events_emitted: Array<{ event_id: string; event_type: string; seq: number }>
   warnings: string[]
   clarification?: {
     missing_fields: string[]
@@ -95,6 +114,7 @@ type ToolResult = {
     handler_version?: string
     trace_id?: string
   }
+  error?: { code: string; message: string }
 }
 ```
 

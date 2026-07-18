@@ -49,7 +49,7 @@ Typical order:
 2. `docs/000-SYSTEM-CONTEXT.md`
 3. `docs/100-ARCHITECTURE.md`
 4. `docs/200-OPERATIONS.md`
-5. `docs/400-CONTRACTS.md`
+5. `docs/300-CONTRACTS.md`
 
 Do not recursively scan the repository unless required.
 
@@ -121,7 +121,21 @@ For non-trivial tasks:
 
 # Testing Rules
 
-Testing must stay proportional.
+Tests are created or expanded only when absolutely necessary.
+
+A test is justified only for:
+
+- a critical runtime or security boundary
+- a stable public contract
+- a regression that cannot be verified reliably with an existing test
+- persistence behavior with meaningful data-loss risk
+
+Prefer extending one existing high-value test over adding a new test file or case. Combine related
+assertions across the same workflow. Do not test implementation details, provider libraries,
+trivial models, getters, wrappers, or duplicated adapter behavior.
+
+The default for low-risk internal changes is no new test. Use compilation and the smallest relevant
+smoke command instead.
 
 Prefer:
 

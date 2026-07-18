@@ -1,7 +1,7 @@
 ---
 id: ADR-20260614-CLEAN-ARCHITECTURE-SOURCE-LAYOUT
 title: Clean Architecture Source Layout
-status: accepted
+status: superseded
 date: 2026-06-14
 owners:
   - victus-agent-runtime
@@ -37,3 +37,5 @@ Events, projection models, projectors, tool contracts, and session context model
 - Domain code no longer owns concrete persistence adapters.
 - Future modules should choose their layer by responsibility instead of creating new root-level packages.
 - Import paths changed while runtime behavior stayed the same.
+
+Superseded by `20260718-tool-first-runtime.md`.
