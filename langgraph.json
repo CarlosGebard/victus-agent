@@ -3,7 +3,7 @@
     "."
   ],
   "graphs": {
-    "agent": "./src/adapters/langgraph/graph.py:graph"
+    "agent": "./src/adapters/langgraph/engine/graph.py:graph"
   },
   "env": ".env"
 }

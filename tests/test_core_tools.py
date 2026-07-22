@@ -1,11 +1,17 @@
 from contextlib import nullcontext
 
 from domain.events.envelope import UserEventEnvelope
+from ops.scripts.phoenix_intent_eval import (
+    build_contract_evaluator,
+    dataset_examples,
+    evaluation_passed,
+)
 from tools.catalog import get_tool, list_tools
 from tools.contracts import ToolContext, ToolIdentity, ToolInvocation, ToolServices
 from tools.profile.contract import ProfileGatewayResponse
 from tools.runtime import ToolRuntime
 from ops.scripts.mcp_intent_eval import function_tools, score_case
+from victus_platform.telemetry.phoenix import initialize_phoenix, trace_llm_call
 
 
 def test_catalog_and_capabilities_share_one_runtime() -> None:
@@ -150,6 +156,58 @@ def test_intent_eval_uses_catalog_and_checks_exact_input() -> None:
     )
     assert passed["passed"] is True
     assert changed["passed"] is False
+
+
+def test_phoenix_intent_dataset_and_contract_evaluator_reuse_existing_scoring() -> None:
+    cases = [
+        {
+            "id": "meal",
+            "input": "Hoy comi arroz",
+            "expected_tool": "event_capture",
+            "exact_input_argument": "normalized_text",
+        }
+    ]
+    examples = dataset_examples(cases)
+    assert examples == [
+        {
+            "id": "meal",
+            "input": {"message": "Hoy comi arroz"},
+            "output": {
+                "expected_tool": "event_capture",
+                "expected_arguments": {},
+                "exact_input_argument": "normalized_text",
+            },
+            "metadata": {"case_id": "meal"},
+        }
+    ]
+
+    evaluator = build_contract_evaluator(user_id="mcp-smoke-user")
+    result = evaluator(
+        examples[0]["input"],
+        {
+            "tool_calls": [
+                {
+                    "name": "event_capture",
+                    "arguments": {
+                        "user_id": "mcp-smoke-user",
+                        "normalized_text": "Hoy comi arroz",
+                    },
+                }
+            ]
+        },
+        examples[0]["output"],
+        examples[0]["metadata"],
+    )
+    assert result["score"] == 1
+    assert evaluation_passed({"error": None, "result": result}) is True
+    assert evaluation_passed({"error": "provider failed", "result": None}) is False
+
+
+def test_phoenix_tracing_is_disabled_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("PHOENIX_TRACING_ENABLED", raising=False)
+    assert initialize_phoenix() is None
+    with trace_llm_call(object()) as span:
+        assert span is None
 
 
 class FakeEventStore:

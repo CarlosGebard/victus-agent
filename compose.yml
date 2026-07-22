@@ -12,11 +12,38 @@ x-agent-service: &agent-service
     LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
     LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
     LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-victus-langgraph-local}
+    PHOENIX_BASE_URL: http://phoenix:6006
+    PHOENIX_COLLECTOR_ENDPOINT: http://phoenix:6006
+    PHOENIX_PROJECT_NAME: ${PHOENIX_PROJECT_NAME:-victus-agent-local}
+    PHOENIX_TRACING_ENABLED: ${PHOENIX_TRACING_ENABLED:-false}
+    VICTUS_CHAT_DEBUG_ENABLED: ${VICTUS_CHAT_DEBUG_ENABLED:-false}
     VICTUS_API_TOKEN: ${VICTUS_API_TOKEN:-}
   extra_hosts:
     - host.docker.internal:host-gateway
 
 services:
+  phoenix:
+    image: arizephoenix/phoenix:version-19.0.0
+    environment:
+      PHOENIX_WORKING_DIR: /mnt/data
+    ports:
+      - "${PHOENIX_PORT:-6007}:6006"
+    volumes:
+      - victus_phoenix_data:/mnt/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:6006/healthz')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
   postgres:
     image: postgres:16
     environment:
@@ -104,4 +131,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  victus_phoenix_data:
   victus_postgres_data:

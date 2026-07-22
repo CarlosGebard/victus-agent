@@ -7,6 +7,7 @@ The current codebase implements a tool-first LangGraph agent runtime, not the fu
 - model-driven selection and bounded execution of the canonical typed tools
 - checkpointed multi-turn state, clarification/confirmation interrupts, and bounded user memory
 - an authenticated asynchronous `POST /chat` boundary
+- an opt-in authenticated `POST /chat/debug` observability boundary for backend clients
 - one catalog and runtime shared by every tool surface
 - vertical tools for capture, profile, planning, feedback, evidence, and interaction
 - LangGraph, MCP stdio/HTTP, and CLI adapters
@@ -36,7 +37,7 @@ src/bootstrap/        dependency assembly
 ops/db/               Alembic config and migrations
 ops/scripts/          helper scripts
 config/               runtime config
-docs/                 compact system documentation and contracts
+docs/                 conceptual guides and domain-owned contracts
 tests/                unit, contract, repository, CLI, graph, and MCP tests
 ```
 
@@ -92,14 +93,17 @@ uv run victus graph-dev --no-browser --port 2024
 
 ## Documentation
 
-Read in this order:
+`docs/Overview.md` explains the system's purpose, scope, architecture, runtime flow, data model,
+boundaries, and current limitations without implementation detail.
 
-1. [`docs/000-SYSTEM-CONTEXT.md`](docs/000-SYSTEM-CONTEXT.md)
-2. [`docs/100-ARCHITECTURE.md`](docs/100-ARCHITECTURE.md)
-3. [`docs/200-OPERATIONS.md`](docs/200-OPERATIONS.md)
-4. [`docs/300-CONTRACTS.md`](docs/300-CONTRACTS.md)
+`docs/Tools.md` describes each implemented tool, records its source path, and defines the shared
+`ToolResult` envelope.
 
-Detailed contracts live under [`docs/contracts/`](docs/contracts/). Avoid adding new planning
-docs unless the current code or a stable contract changes.
+`docs/Projections.md` describes the implemented projections, their source paths, schemas, and how
+the agent uses them.
 
-MCP tool testing: [`docs/runbooks/mcp-tool-testing.md`](docs/runbooks/mcp-tool-testing.md).
+`docs/Events.md` describes active events, their emitting tools, common envelope, and how they connect
+tools, persistence, projections, and the agent.
+
+Specialized agent, database, safety, event-registry, and imported contracts remain under
+`docs/contracts/`.

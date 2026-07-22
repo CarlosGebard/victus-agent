@@ -1,3 +1,231 @@
+# LangGraph package boundaries
+
+## Goal
+
+Reorganize `src/adapters/langgraph/` into explicit runtime, orchestration-engine, and capability
+packages without changing graph behavior, contracts, or external HTTP/CLI behavior.
+
+## Scope
+
+- Place persistence, memory, context, session-context, and response support under `runtime/`.
+- Place graph assembly, state, routing, tool-node, and agent-loop code under `engine/`.
+- Place LangGraph-specific contracts, projections, self-harm response, and translation support under
+  `capabilities/`.
+- Update internal imports, entrypoint configuration, source references, and focused tests.
+
+## Assumptions
+
+- Existing local changes in the affected modules are authoritative and must be preserved verbatim
+  apart from import paths.
+- `response.py` belongs with runtime session support because it persists legacy session context.
+- `prompts/compose_response.py` remains in the existing prompts package because it was not part of
+  the requested module grouping.
+- The move changes internal Python module paths but preserves callable names and external APIs.
+
+## Steps
+
+1. Record the package-boundary decision in an ADR.
+2. Create the three subpackages and move the requested modules without changing their behavior.
+3. Update imports, `langgraph.json`, tests, and documentation source references.
+4. Verify there are no stale old-path imports and run focused repository validation.
+
+## Validation
+
+- Search source, tests, configuration, and active docs for obsolete `adapters.langgraph.<module>`
+  imports and old source paths.
+- `uv run --extra test victus test tests/test_adapters.py`
+- `uv run --extra test victus compile`
+- `uv run --extra test victus check`
+
+## Risks
+
+- LangGraph Studio depends on the configured graph module path and will fail if `langgraph.json` is
+  not updated with the move.
+- Legacy session-context modules are currently inactive; moving them must not accidentally wire them
+  into the active graph.
+- Existing uncommitted work overlaps several moved files and must remain intact.
+
+---
+
+# Contract documentation by domain
+
+## Goal
+
+Make active contracts immediately distinguishable by owning domain, while keeping the fundamental
+`Tools.md`, `Events.md`, and `Projections.md` guides at the top of `docs/` and PostgreSQL documented
+explicitly under `docs/contracts/`.
+
+## Scope
+
+- Add a minimal contract index.
+- Preserve and update active chat, graph state, tool result, event envelope, projection, and database
+  schemas against current code.
+- Keep the superseded session-context schema clearly separated as a migration reference.
+- Remove the remaining generic `docs/contracts/` grouping after its useful content is represented.
+
+## Assumptions
+
+- Code models and database metadata are authoritative when historical contract text differs.
+- Redundant indexes, empty imported-contract locks, and future capability notes are not active
+  contracts.
+- Existing unrelated documentation and runtime changes remain untouched.
+
+## Steps
+
+1. Place agent contracts under `docs/contracts/agent/`.
+2. Keep shared tool, event, and projection schemas in the fundamental top-level domain documents.
+3. Create the PostgreSQL schema contract and retain the safety artifact contract separately.
+4. Add the contract index and update documentation navigation.
+
+## Validation
+
+- Compare documented contract fields with the current typed models and SQLAlchemy metadata.
+- Verify every documented source path exists.
+- Verify the old generic contract directory contains no remaining active contract.
+- Run formatting and repository validation checks.
+
+## Risks
+
+- Historical contracts may contain stale fields; only implemented fields will be presented as
+  current.
+- The session-context contract is superseded and must not appear active.
+
+---
+
+# Documentation reset: single conceptual overview
+
+## Goal
+
+Replace the numbered documentation system with one current, conceptual `docs/Overview.md` while
+preserving the existing documentation as a deprecated archive.
+
+## Scope
+
+- Rename `docs/` to `docs-deprecated/` without deleting its contents.
+- Create `docs/Overview.md` in English as the sole current system overview.
+- Update active repository guidance and entrypoint links to the new documentation model.
+- Prevent the contract sync helper from recreating the retired structure under `docs/`.
+
+## Assumptions
+
+- Deprecated documents are retained as historical material, not current sources of truth.
+- The overview describes the implemented system at a conceptual level and contains no code,
+  commands, schemas, or implementation walkthroughs.
+- Runtime behavior and public contracts remain unchanged.
+
+## Steps
+
+1. Derive the current system model from the existing documentation and focused runtime sources.
+2. Archive the complete current documentation tree under `docs-deprecated/`.
+3. Add the consolidated overview and update active documentation rules and links.
+4. Check that no active reference requires the retired numbered documents and validate the
+   documentation structure.
+
+## Validation
+
+- Verify that `docs/` contains only `Overview.md`.
+- Verify that all prior documentation exists under `docs-deprecated/`.
+- Search active repository entrypoints for references to the retired numbered documents.
+- Run the repository's lightweight validation command.
+
+## Risks
+
+- Archived documents may describe details more precisely than the overview, but they are no longer
+  authoritative.
+- Existing local changes inside the old documentation tree must remain intact through the rename.
+
+---
+
+# Preserve tool-call history across checkpointed turns
+
+## Goal
+
+Keep checkpointed chat history valid after tool execution so a later `POST /chat` turn in the same
+conversation can be sent to LiteLLM without an orphaned tool message.
+
+## Scope
+
+- Persist the assistant message containing the accepted tool call before tool execution.
+- Preserve assistant `tool_calls` and tool `tool_call_id` when converting checkpoint messages to LLM
+  request dictionaries.
+- Add focused HTTP regression coverage for a tool turn followed by another turn on the same thread.
+
+## Assumptions
+
+- LangGraph's existing `messages` reducer and checkpointer remain the source of thread-scoped message
+  history.
+- Store namespaces and long-term memory behavior do not need changes for this defect.
+- Provider exception logging is optional and outside the minimal correctness fix because the HTTP
+  debug response already exposes only the exception class.
+
+## Steps
+
+1. Append a provider-compatible assistant tool-call message when `agent_decision` accepts one call.
+2. Extend `_message_dict()` to retain tool-call linkage from checkpoint-restored LangChain messages.
+3. Add a two-turn authenticated HTTP regression test using one shared in-memory checkpointer.
+4. Run focused adapter tests, compilation, and repository checks.
+
+## Validation
+
+- `uv run --extra test victus test tests/test_adapters.py`
+- `uv run --extra test victus compile`
+- `uv run --extra test victus check`
+
+## Risks
+
+- Tool-call dictionaries must match LangChain's expected shape so `add_messages` can restore them.
+- Confirmation and clarification flows must retain the same call id used by the eventual tool result.
+
+---
+
+# Authenticated chat debug endpoint
+
+## Goal
+
+Expose an opt-in `POST /chat/debug` boundary that executes the same authenticated LangGraph turn as
+`POST /chat` and returns a bounded, redacted view of the resulting orchestration state for the
+Victus webapp backend to render.
+
+## Scope
+
+- Shared HTTP chat execution path for normal and debug responses.
+- Additive debug response contract and recursive safe serialization.
+- Environment feature flag, contract documentation, and chat operations runbook.
+- Focused adapter coverage for disabled access, response shape, redaction, and ownership.
+
+## Assumptions
+
+- The webapp backend forwards its user JWT as the existing bearer token.
+- React never calls the agent service directly.
+- Debug output may contain the authenticated user's own conversational and projection state, but
+  never bearer tokens, credentials, system prompts, environment values, or raw checkpoints.
+- `POST /chat` remains backward compatible.
+
+## Steps
+
+1. Add typed debug response fields without changing `ChatResponse`.
+2. Refactor the Starlette adapter so both routes share authentication, ownership, resume, and graph
+   execution behavior.
+3. Build bounded debug snapshots from the actual graph result and post-run pending nodes, with
+   recursive secret-key redaction.
+4. Gate `/chat/debug` behind `VICTUS_CHAT_DEBUG_ENABLED` and document its secure operation.
+5. Extend the existing HTTP adapter test and run the repository validation commands.
+
+## Validation
+
+- `uv run --extra test victus test tests/test_adapters.py`
+- `uv run --extra test victus compile`
+- `uv run --extra test victus check`
+
+## Risks
+
+- Graph state may contain sensitive user health context; debug access retains normal identity and
+  thread ownership checks and should remain disabled outside controlled environments.
+- Unbounded state can produce oversized responses; serialization limits depth, collection length,
+  and string length.
+
+---
+
 # LangGraph Agent V1
 
 This is the active implementation plan. It supersedes the completed tool-first, MCP discoverability,
@@ -51,7 +279,7 @@ PostgreSQL remains the shared persistence service.
 
 ## Current state observations
 
-- `src/adapters/langgraph/graph.py` routes every allowed request to fixed `event_capture` and ends.
+- `src/adapters/langgraph/engine/graph.py` routes every allowed request to fixed `event_capture` and ends.
 - `tool_node.py` hardcodes `user_id + normalized_text`; it cannot execute other tool schemas.
 - `tool_registry`, `compose_response`, `context_bootstrap`, and `summarize_after_response` exist but
   are not wired. `build_graph()` accepts `session_context_repository` but never uses it.
@@ -147,7 +375,7 @@ fail closed or are serialized only after explicit ordering and side-effect valid
 ## Likely touch points
 
 - `pyproject.toml`, `uv.lock`, `config/runtime.yml`, `.env.example`
-- `src/adapters/langgraph/{graph,state,routing,tool_node,context,response}.py`
+- `src/adapters/langgraph/{engine,runtime}/` graph and runtime modules
 - new focused nodes under `src/adapters/langgraph/`
 - `src/bootstrap/` for graph and storage lifecycle
 - `src/victus_platform/llm/`, projection repositories/projectors, `src/tools/runtime.py`

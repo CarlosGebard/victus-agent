@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
@@ -6,7 +7,7 @@ from langgraph.types import Command
 
 from adapters.cli.commands import inspect_tool, list_tool_data
 from adapters.http.app import create_app as create_chat_app
-from adapters.langgraph.graph import build_graph
+from adapters.langgraph.engine.graph import build_graph
 from adapters.mcp.discovery import discover_tools
 from tools.contracts import ClarificationRequest, ToolMeta, ToolResult
 from victus_platform.llm.contracts import LLMRequest, LLMResponse
@@ -276,7 +277,13 @@ def test_chat_api_authenticates_and_enforces_thread_ownership() -> None:
     from starlette.testclient import TestClient
 
     graph = build_graph(checkpointer=InMemorySaver(), store=InMemoryStore())
-    with TestClient(create_chat_app(graph=graph, identity_resolver=TokenIdentityResolver())) as client:
+    with TestClient(
+        create_chat_app(
+            graph=graph,
+            identity_resolver=TokenIdentityResolver(),
+            debug_enabled=True,
+        )
+    ) as client:
         first = client.post(
             "/chat",
             headers={"Authorization": "Bearer user-one"},
@@ -287,9 +294,134 @@ def test_chat_api_authenticates_and_enforces_thread_ownership() -> None:
             headers={"Authorization": "Bearer user-two"},
             json={"conversation_id": "owned", "request_id": "r2", "message": "hola"},
         )
+        debug = client.post(
+            "/chat/debug",
+            headers={"Authorization": "Bearer user-one"},
+            json={"conversation_id": "debug-owned", "request_id": "r3", "message": "hola"},
+        )
+        debug_forbidden = client.post(
+            "/chat/debug",
+            headers={"Authorization": "Bearer user-two"},
+            json={"conversation_id": "debug-owned", "request_id": "r4", "message": "hola"},
+        )
     assert first.status_code == 200
     assert first.json()["status"] == "completed"
+    assert "debug" not in first.json()
     assert forbidden.status_code == 403
+    assert debug.status_code == 200
+    assert debug.json()["request_id"] == "r3"
+    assert debug.json()["debug"]["authenticated_user_id"] == "u1"
+    assert debug.json()["debug"]["state"]["audit"]["node_path"][-1] == "finalize_turn"
+    assert debug_forbidden.status_code == 403
+
+
+def test_chat_api_preserves_tool_calls_across_conversation_turns() -> None:
+    from starlette.testclient import TestClient
+
+    llm_client = SequenceClient(
+        [
+            LLMResponse(
+                text="",
+                tool_calls=[
+                    {
+                        "id": "call-1",
+                        "name": "event_capture",
+                        "arguments": {"user_id": "u1"},
+                    }
+                ],
+            ),
+            LLMResponse(text="Registrado.", tool_calls=[]),
+            LLMResponse(text="¿Qué más necesitas?", tool_calls=[]),
+        ]
+    )
+    graph = build_graph(
+        llm_client=llm_client,
+        tool_runtime=RecordingRuntime(),
+        checkpointer=InMemorySaver(),
+        store=InMemoryStore(),
+    )
+    with TestClient(
+        create_chat_app(graph=graph, identity_resolver=TokenIdentityResolver())
+    ) as client:
+        first = client.post(
+            "/chat",
+            headers={"Authorization": "Bearer user-one"},
+            json={"conversation_id": "tool-thread", "request_id": "r1", "message": "comí arroz"},
+        )
+        second = client.post(
+            "/chat",
+            headers={"Authorization": "Bearer user-one"},
+            json={"conversation_id": "tool-thread", "request_id": "r2", "message": "hola"},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["message"] == "¿Qué más necesitas?"
+    follow_up_messages = llm_client.requests[-1].messages
+    assistant = next(message for message in follow_up_messages if message["role"] == "assistant")
+    tool = next(message for message in follow_up_messages if message["role"] == "tool")
+    assert assistant["tool_calls"][0]["id"] == "call-1"
+    assert tool["tool_call_id"] == "call-1"
+
+
+def test_chat_debug_is_opt_in_and_redacts_sensitive_state() -> None:
+    from starlette.testclient import TestClient
+
+    disabled_app = create_chat_app(
+        graph=DebugStateGraph(),
+        identity_resolver=TokenIdentityResolver(),
+        debug_enabled=False,
+    )
+    with TestClient(disabled_app) as client:
+        hidden = client.post(
+            "/chat/debug",
+            headers={"Authorization": "Bearer user-one"},
+            json={"conversation_id": "debug", "request_id": "r1", "message": "hola"},
+        )
+    assert hidden.status_code == 404
+
+    enabled_app = create_chat_app(
+        graph=DebugStateGraph(),
+        identity_resolver=TokenIdentityResolver(),
+        debug_enabled=True,
+    )
+    with TestClient(enabled_app) as client:
+        response = client.post(
+            "/chat/debug",
+            headers={"Authorization": "Bearer user-one"},
+            json={"conversation_id": "debug", "request_id": "r1", "message": "hola"},
+        )
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["debug"]["next_nodes"] == ["confirmation_interrupt"]
+    assert payload["debug"]["state"]["tool_context"]["api_key"] == "[redacted]"
+    assert "do-not-return" not in response.text
+
+
+def test_chat_rejects_message_while_interrupt_is_pending() -> None:
+    from starlette.testclient import TestClient
+
+    graph = PendingInterruptGraph()
+    with TestClient(
+        create_chat_app(
+            graph=graph,
+            identity_resolver=TokenIdentityResolver(),
+            debug_enabled=True,
+        )
+    ) as client:
+        response = client.post(
+            "/chat/debug",
+            headers={"Authorization": "Bearer user-one"},
+            json={"conversation_id": "paused", "request_id": "r2", "message": "a las 13:00"},
+        )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": "conversation is awaiting a response",
+        "message": "Resume the pending interrupt instead of sending a new message.",
+        "pending_nodes": ["clarification_interrupt"],
+    }
+    assert graph.invoked is False
 
 
 def test_mcp_discovers_catalog_and_serves_http_health() -> None:
@@ -335,11 +467,13 @@ class BlockedSafetyClient:
 class SequenceClient:
     def __init__(self, responses: list[LLMResponse]) -> None:
         self.responses = responses
+        self.requests: list[LLMRequest] = []
 
     def complete(self, request: LLMRequest) -> LLMResponse:
         raise AssertionError("unexpected sync model call")
 
     async def acomplete(self, request: LLMRequest) -> LLMResponse:
+        self.requests.append(request)
         return self.responses.pop(0)
 
 
@@ -365,3 +499,44 @@ class SequenceRuntime(RecordingRuntime):
 class TokenIdentityResolver:
     async def resolve(self, token: str) -> str | None:
         return {"user-one": "u1", "user-two": "u2"}.get(token)
+
+
+class DebugStateGraph:
+    def __init__(self):
+        self.invoked = False
+
+    async def aget_state(self, config):
+        next_nodes = ("confirmation_interrupt",) if self.invoked else ()
+        return SimpleNamespace(values={}, next=next_nodes)
+
+    async def ainvoke(self, graph_input, *, config):
+        self.invoked = True
+        return {
+            "graph_version": "1",
+            "request": {
+                "request_id": "r1",
+                "user_id": config["configurable"]["user_id"],
+                "conversation_id": config["configurable"]["thread_id"],
+            },
+            "response": {"mode": "final", "user_message": "Debug listo."},
+            "tool_context": {"api_key": "do-not-return", "tool_results": []},
+            "audit": {"node_path": ["finalize_turn"]},
+        }
+
+
+class PendingInterruptGraph:
+    def __init__(self):
+        self.invoked = False
+
+    async def aget_state(self, config):
+        return SimpleNamespace(
+            values={
+                "graph_version": "1",
+                "request": {"user_id": config["configurable"]["user_id"]},
+            },
+            next=("clarification_interrupt",),
+        )
+
+    async def ainvoke(self, graph_input, *, config):
+        self.invoked = True
+        raise AssertionError("graph must not be invoked for a message while paused")

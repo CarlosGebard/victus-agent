@@ -30,6 +30,11 @@ contracts = "ops.scripts.contracts:main"
 embeddings = [
   "sentence-transformers>=3",
 ]
+phoenix = [
+  "arize-phoenix-client>=2,<3",
+  "arize-phoenix-otel>=0.16,<1",
+  "openinference-instrumentation-langchain>=0.1,<1",
+]
 safety-index = [
   "chromadb>=1,<2",
   "datasets>=4,<5",

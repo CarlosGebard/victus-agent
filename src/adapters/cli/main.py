@@ -68,6 +68,18 @@ def main() -> int:
         default=os.getenv("INTENT_EVAL_MODEL", "litellm_proxy/gemini-flash-lite"),
     )
     intent_eval_parser.add_argument("--user-id", default="mcp-smoke-user")
+    phoenix_intent_eval_parser = subparsers.add_parser(
+        "phoenix-intent-eval",
+        help="Run tool-selection cases as a Phoenix experiment.",
+    )
+    phoenix_intent_eval_parser.add_argument("--cases", default="ops/evals/mcp_intent_cases.json")
+    phoenix_intent_eval_parser.add_argument(
+        "--model",
+        default=os.getenv("INTENT_EVAL_MODEL", "litellm_proxy/gemini-flash-lite"),
+    )
+    phoenix_intent_eval_parser.add_argument("--user-id", default="mcp-smoke-user")
+    phoenix_intent_eval_parser.add_argument("--dataset", default="victus-mcp-intent")
+    phoenix_intent_eval_parser.add_argument("--dry-run", type=int, default=0)
 
     args = parser.parse_args()
 
@@ -125,6 +137,23 @@ def main() -> int:
                 args.model,
                 "--user-id",
                 args.user_id,
+            ]
+        )
+    if args.command == "phoenix-intent-eval":
+        from ops.scripts.phoenix_intent_eval import main as phoenix_intent_eval_main
+
+        return phoenix_intent_eval_main(
+            [
+                "--cases",
+                args.cases,
+                "--model",
+                args.model,
+                "--user-id",
+                args.user_id,
+                "--dataset",
+                args.dataset,
+                "--dry-run",
+                str(args.dry_run),
             ]
         )
 
@@ -247,7 +276,7 @@ def _smoke_event_store() -> int:
 
 
 def _langgraph_storage_setup() -> int:
-    from adapters.langgraph.persistence import setup_postgres_graph_storage
+    from adapters.langgraph.runtime.persistence import setup_postgres_graph_storage
     from victus_platform.database.engine import database_url
 
     asyncio.run(setup_postgres_graph_storage(database_url()))
@@ -258,7 +287,7 @@ def _langgraph_storage_setup() -> int:
 def _self_harm_response(query: str) -> int:
     import json
 
-    from adapters.langgraph.self_harm_response import self_harm_response
+    from adapters.langgraph.capabilities.self_harm_response import self_harm_response
 
     state = {
         "request": {
@@ -324,7 +353,7 @@ def _self_harm_safety_state(query: str) -> dict[str, object]:
 def _safety_check(query: str) -> int:
     import json
 
-    from adapters.langgraph.context import _safety_from_llama_guard
+    from adapters.langgraph.runtime.context import _safety_from_llama_guard
     from victus_platform.config.runtime import load_runtime_config
     from victus_platform.llm.hugging_face_endpoint import (
         HuggingFaceRouterClient,

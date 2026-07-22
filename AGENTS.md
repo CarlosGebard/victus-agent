@@ -46,10 +46,8 @@ Read only what is necessary.
 Typical order:
 
 1. `README.md`
-2. `docs/000-SYSTEM-CONTEXT.md`
-3. `docs/100-ARCHITECTURE.md`
-4. `docs/200-OPERATIONS.md`
-5. `docs/300-CONTRACTS.md`
+2. `docs/Overview.md`
+3. Files directly related to the requested change
 
 Do not recursively scan the repository unless required.
 
@@ -157,6 +155,11 @@ Do not introduce large testing infrastructure without permission.
 
 Documentation must stay minimal and useful.
 
+`docs/Overview.md`, `docs/Tools.md`, `docs/Events.md`, and `docs/Projections.md` document the
+fundamental system pieces. Specialized contract documentation belongs under `docs/contracts/`.
+Keep documentation in English and let source code remain the authority. Do not introduce numbered
+documentation stages or parallel documentation trees unless explicitly requested.
+
 Do not create:
 
 - `TASKS.md`
@@ -245,7 +248,7 @@ Before finishing a task or preparing a commit/push, verify whether the changes a
 
 If documentation is affected:
 
-- update the relevant documentation
+- update `docs/Overview.md` when the high-level system understanding changes
 OR
 - explicitly state what should be updated and why
 

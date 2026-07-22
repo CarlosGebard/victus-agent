@@ -6,14 +6,18 @@ import os
 from typing import Any
 
 from victus_platform.llm.contracts import LLMRequest, LLMResponse
+from victus_platform.telemetry.phoenix import record_llm_usage, trace_llm_call
 
 
 class LiteLLMClient:
     def complete(self, request: LLMRequest) -> LLMResponse:
         import litellm
 
-        raw = litellm.completion(**self._kwargs(request))
-        return self._to_response(raw)
+        with trace_llm_call(request) as span:
+            raw = litellm.completion(**self._kwargs(request))
+            response = self._to_response(raw)
+            record_llm_usage(span, response.usage)
+            return response
 
     async def acomplete(self, request: LLMRequest) -> LLMResponse:
         return await asyncio.to_thread(self.complete, request)

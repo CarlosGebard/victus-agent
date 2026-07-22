@@ -64,7 +64,7 @@ uv run --env-file .env --extra safety-index \
 The runtime calls `feature_extraction` because the logistic model requires a 1024-dimensional
 vector; `sentence_similarity` returns pairwise scores and is not used by this classifier. It loads
 NumPy arrays with checksum validation and does not require scikit-learn. See
-`docs/contracts/safety-logistic-artifact-v1.md` for the artifact contract.
+`docs/contracts/Safety-Classifier-Artifact.md` for the artifact contract.
 
 ## Recovery
 

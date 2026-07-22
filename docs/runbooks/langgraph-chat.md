@@ -42,6 +42,25 @@ curl -X POST http://localhost:8766/chat \
   -d '{"conversation_id":"demo-1","request_id":"turn-1","message":"hoy comi arroz"}'
 ```
 
+For controlled debugging, enable the route before starting the service:
+
+```bash
+VICTUS_CHAT_DEBUG_ENABLED=true docker compose up -d --build chat
+```
+
+The webapp backend may then forward the same user JWT and inspect the bounded graph state:
+
+```bash
+curl -X POST http://localhost:8766/chat/debug \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"conversation_id":"debug-1","request_id":"turn-1","message":"preséntate brevemente"}'
+```
+
+Do not expose this endpoint directly to browsers or enable it broadly in production. The response
+contains the authenticated user's own conversational and health context even though secret-bearing
+field names are redacted and payload sizes are bounded.
+
 When status is `needs_user_response`, resume the same conversation:
 
 ```bash
@@ -63,7 +82,9 @@ curl -X POST http://localhost:8766/chat \
 
 - `503 /health`: verify database reachability, LangGraph setup, and LiteLLM configuration.
 - `401 /chat`: verify the bearer token against `BACKEND_API_URL/me`.
+- `404 /chat/debug`: set `VICTUS_CHAT_DEBUG_ENABLED=true` and restart the chat service.
 - `403 /chat`: the authenticated user does not own that conversation.
-- `409 /chat`: there is no pending interrupt or the checkpoint graph version is incompatible.
+- `409 /chat`: resume was sent without a pending interrupt, message was sent while an interrupt was
+  pending, or the checkpoint graph version is incompatible.
 - `503 /chat`: inspect database and LiteLLM availability; responses intentionally hide provider and
   credential details.
