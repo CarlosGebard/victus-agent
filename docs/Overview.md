@@ -85,16 +85,7 @@ controlled outcomes rather than bypassing the runtime boundary.
 
 ## Capability Landscape
 
-The current capabilities cover:
-
-- capturing concrete user events such as meals, symptoms, biometrics, sleep, or exercise;
-- maintaining durable profile preferences, restrictions, and related user context;
-- managing goals and planning lifecycle actions;
-- recording feedback about plans, recommendations, meals, or answers;
-- preserving grounded claims and their evidence;
-- requesting and resolving missing information;
-- requesting and resolving explicit approval;
-- retrieving the authenticated user's current profile from the Victus backend.
+The current public capability is capturing meals and beverages.
 
 Capabilities are intentionally narrow. A capability may emit domain events, request continuation,
 return data, or reject an unsafe or invalid action. Adding or renaming a public capability changes a
@@ -185,7 +176,8 @@ its implementation and stable boundary agree.
 ## Documentation Policy
 
 This overview is the current conceptual system document. `Tools.md`, `Events.md`, and
-`Projections.md` document the fundamental system pieces. Specialized contracts live under
-`docs/contracts/`. Documentation should guide readers while the code remains authoritative. The
-overview must not contain source code, command sequences, detailed schemas, runbooks, or numbered
-documentation stages.
+`Projections.md` document the fundamental system pieces. [Graph-Flow.md](Graph-Flow.md) documents
+the current LangGraph nodes and routes. Specialized contracts live under `docs/contracts/`.
+Documentation should guide readers while the code remains authoritative. The overview must not
+contain source code, command sequences, detailed schemas, runbooks, or numbered documentation
+stages.

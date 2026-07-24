@@ -56,12 +56,13 @@ Complete local stack:
 cp .env.example .env  # only when .env does not exist
 docker compose up -d --build
 docker compose ps
-docker compose logs -f chat mcp
+docker compose logs -f agent mcp
 docker compose down
 ```
 
-Compose starts PostgreSQL, runs both idempotent setup jobs, and then starts chat on `8766` and MCP
-on `8765`. Configure the external backend and LiteLLM proxy URLs in `.env` first.
+Compose starts PostgreSQL, the LangGraph agent on `8766`, and MCP on `8765`. Agent and MCP apply
+pending application migrations during startup under one database lock; the agent also prepares its
+LangGraph storage. Configure the external backend and LiteLLM proxy URLs in `.env` first.
 
 Database and smoke commands:
 
@@ -79,7 +80,7 @@ MCP commands:
 
 ```bash
 uv run victus mcp-list-tools
-uv run victus mcp-call event_capture '{"user_id":"local-smoke-user","normalized_text":"hoy comi arroz"}'
+uv run victus mcp-call event_capture '{"items":[{"name":"arroz","quantity":100,"unit":"g"}]}'
 uv run victus-mcp
 uv run victus-mcp-http
 uv run victus-chat-http

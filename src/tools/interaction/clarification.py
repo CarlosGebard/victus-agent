@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from domain.events.interaction import ClarificationRequestedPayload, ClarificationResolvedPayload
 from tools._event_builder import new_prefixed_id, tool_event_envelope
-from tools.contracts import ToolContext, ToolExecution, ToolMeta, ToolResult, ToolServices
+from tools.contracts import ToolContext, ToolExecution, ToolResult, ToolServices
 from tools.interaction.contract import ClarificationInput
 
 
@@ -14,9 +14,7 @@ def execute(
     return ToolExecution(
         result=ToolResult(
             status="needs_clarification" if input_data.action == "request" else "success",
-            data=input_data.model_dump(mode="json"),
-            meta=ToolMeta(handler_version="clarification.v1", trace_id=context.trace_id),
-        ),
+            data=input_data.model_dump(mode="json"),        ),
         events=(event,),
     )
 

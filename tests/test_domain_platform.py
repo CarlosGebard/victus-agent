@@ -45,5 +45,5 @@ def test_safety_rules_separate_critical_intent_from_harmless_language() -> None:
         )
     )
     assert result.decision == "emergency_escalation"
-    assert result.audit_required is True
+    assert result.reasons == ["explicit_suicidal_intent"]
     assert evaluate_rules("this homework is killing me") == []

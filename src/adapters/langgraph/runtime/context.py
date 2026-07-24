@@ -12,6 +12,8 @@ from domain.shared.text import normalize_text
 from tools.catalog import list_tools
 from victus_platform.safety.rules import SafetyPrecheck, SafetyPrecheckInput
 
+AGENT_ENABLED_TOOLS = frozenset({"event_capture"})
+
 
 def normalize_request(state: VictusGraphState) -> VictusGraphState:
     request = dict(state.get("request", {}))
@@ -50,15 +52,10 @@ def safety_precheck(*, llm_client: LLMClient | None = None, model: str | None = 
                     state,
                     safety={
                         "status": "blocked",
-                        "reasons": local.reason_codes,
+                        "reasons": local.reasons,
                         "decision": local.decision,
                         "severity": local.severity,
                         "categories": local.categories,
-                        "matched_rules": local.matched_rules,
-                        "reason_codes": local.reason_codes,
-                        "blocked_tools": local.blocked_tools,
-                        "allowed_next_route": local.allowed_next_route,
-                        "audit_required": local.audit_required,
                     },
                     node_name="safety_precheck",
                 )
@@ -97,18 +94,13 @@ def _safety_from_llama_guard(output: str) -> dict[str, object]:
     normalized = output.strip().lower()
     if normalized.startswith("unsafe"):
         categories = _llama_guard_categories(normalized)
-        reason_codes = [f"llama_guard_{category}" for category in categories]
+        reasons = [f"llama_guard_{category}" for category in categories]
         return {
             "status": "blocked",
-            "reasons": reason_codes,
+            "reasons": reasons,
             "decision": "route_to_safety_triage",
             "severity": "high",
             "categories": categories,
-            "matched_rules": [],
-            "reason_codes": reason_codes,
-            "blocked_tools": ["planning", "event_capture", "profile_update"],
-            "allowed_next_route": "SafetyTriageRoute",
-            "audit_required": True,
         }
     return _allowed_safety()
 
@@ -155,11 +147,6 @@ def _safety_from_prompt_guard(label: str) -> dict[str, object]:
         "decision": "route_to_safety_triage",
         "severity": "high",
         "categories": [category],
-        "matched_rules": [],
-        "reason_codes": [reason_code],
-        "blocked_tools": ["planning", "event_capture", "profile_update"],
-        "allowed_next_route": "SafetyTriageRoute",
-        "audit_required": True,
     }
 
 
@@ -170,11 +157,6 @@ def _allowed_safety() -> dict[str, object]:
         "decision": "allow",
         "severity": "none",
         "categories": ["none"],
-        "matched_rules": [],
-        "reason_codes": [],
-        "blocked_tools": [],
-        "allowed_next_route": "ToolRegistry",
-        "audit_required": False,
     }
 
 
@@ -182,22 +164,17 @@ def tool_registry(state: VictusGraphState) -> VictusGraphState:
     safety = state.get("safety", {})
     if safety.get("status") == "blocked":
         allowed_tools: list[str] = []
-        target_node = str(safety.get("allowed_next_route") or "SafetyTriageRoute")
     else:
-        allowed_tools = [tool.name for tool in list_tools(exposure="langgraph")]
-        target_node = "ToolRegistry"
+        allowed_tools = [
+            tool.name
+            for tool in list_tools(exposure="langgraph")
+            if tool.name in AGENT_ENABLED_TOOLS
+        ]
 
     tool_context = dict(state.get("tool_context", {}))
     tool_context["allowed_tools"] = allowed_tools
     tool_context.setdefault("tool_results", [])
-    intent = {
-        "primary_intent": "tool_registry",
-        "confidence": 1.0,
-        "target_node": target_node,
-        "subintents": [],
-        "rationale": "tools_registered",
-    }
-    return _merge(state, tool_context=tool_context, intent=intent, node_name="tool_registry")
+    return _merge(state, tool_context=tool_context, node_name="tool_registry")
 
 
 def safety_blocked_response(state: VictusGraphState) -> VictusGraphState:
@@ -208,13 +185,6 @@ def safety_blocked_response(state: VictusGraphState) -> VictusGraphState:
     return _merge(
         state,
         tool_context=tool_context,
-        intent={
-            "primary_intent": "safety_blocked",
-            "confidence": 1.0,
-            "target_node": "safety_blocked_response",
-            "subintents": [],
-            "rationale": "safety_status_blocked",
-        },
         response=_blocked_response(list(safety.get("reasons", []))),
         node_name="safety_blocked_response",
     )
@@ -264,7 +234,6 @@ def compose_response(*, llm_client: LLMClient | None = None, model: str | None =
         response = {
             "mode": "final",
             "user_message": llm_response.text,
-            "internal_notes": ["response composed with llm port"],
         }
         return _merge(state, response=response, node_name="compose_response")
 
@@ -289,7 +258,6 @@ def _compose_response_sync(state: VictusGraphState) -> VictusGraphState:
     response = {
         "mode": "final",
         "user_message": f"Route selected: {intent.get('target_node', 'unknown')}",
-        "internal_notes": ["deterministic response composer"],
     }
     return _merge(state, response=response, node_name="compose_response")
 
@@ -301,7 +269,6 @@ def _blocked_response(reasons: list[str]) -> dict[str, object]:
             "No puedo ayudar con esa accion de forma segura. Busca apoyo medico urgente "
             "si los sintomas son graves o inmediatos."
         ),
-        "internal_notes": reasons,
     }
 
 

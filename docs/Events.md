@@ -30,9 +30,9 @@ Projection update: `src/bootstrap/runtime.py`
 Emitter: `src/tools/event_capture/actions.py`
 
 - `meal.logged` — Records a meal and its items.
-- `biometrics.logged` — Records biometric measurements.
-- `lifestyle_metric.logged` — Records sleep, water, steps, stress, energy, or hunger.
-- `symptom.logged` — Records a symptom and its severity.
+
+`event_capture` currently emits only `meal.logged`. Historical event contracts for other categories
+remain readable by the event registry and projections, but are not accepted by this tool.
 
 ### `profile_update`
 

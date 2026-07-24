@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tools.contracts import ToolContext, ToolExecution, ToolMeta, ToolResult, ToolServices
+from tools.contracts import ToolContext, ToolExecution, ToolResult, ToolServices
 from tools.profile.actions import build_profile_update_event
 from tools.profile.contract import ProfileUpdateInput
 from tools.profile.policy import decide_with_policy
@@ -23,8 +23,6 @@ def execute(
     return ToolExecution(
         result=ToolResult(
             status=status,
-            data=decision.model_dump(mode="json"),
-            meta=ToolMeta(handler_version="profile_update.v1", trace_id=context.trace_id),
-        ),
+            data=decision.model_dump(mode="json"),        ),
         events=(event,) if event is not None and status == "success" else (),
     )

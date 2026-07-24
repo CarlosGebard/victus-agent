@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
@@ -11,13 +11,16 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
 from adapters.mcp.server import build_server
+from bootstrap.storage import prepare_mcp_storage
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8765
 MCP_PATH = "/mcp"
 
 
-def create_app() -> Starlette:
+def create_app(
+    *, storage_preparer: Callable[[], Awaitable[None]] = prepare_mcp_storage
+) -> Starlette:
     mcp_server = build_server()
     session_manager = StreamableHTTPSessionManager(
         app=mcp_server,
@@ -27,6 +30,7 @@ def create_app() -> Starlette:
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
+        await storage_preparer()
         async with session_manager.run():
             yield
 

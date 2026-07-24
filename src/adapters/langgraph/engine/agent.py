@@ -13,9 +13,30 @@ from tools.catalog import get_tool, list_tools
 from tools.contracts import ToolContext, ToolIdentity, ToolInvocation
 from tools.runtime import ToolRuntime
 from victus_platform.llm.contracts import LLMClient, LLMRequest
+from victus_platform.telemetry.phoenix import set_current_span_attributes
 
 MAX_TOOL_LOOPS = 4
-EXACT_TEXT_TOOLS = frozenset({"event_capture", "profile_update"})
+# Agent-owned graph nodes and routes:
+#
+# - ingest_turn: validates authenticated request/thread context, initializes turn state,
+#   and enters agent_decision through the fixed graph edge.
+# - agent_decision: asks the model for either one allowed tool call or a final answer.
+#   route_after_decision sends it to compose_final_response when a response exists,
+#   confirmation_interrupt when the proposed action requires approval, or execute_tool otherwise.
+# - confirmation_interrupt: pauses the graph for user approval before sensitive actions.
+#   route_after_confirmation sends declined confirmations to compose_final_response and accepted
+#   confirmations to execute_tool.
+# - execute_tool: invokes the proposed canonical tool with authenticated LangGraph context.
+#   route_after_execution sends needs_clarification results to clarification_interrupt, successful
+#   results back to agent_decision for final wording, and blocked/error results to compose_final_response.
+# - clarification_interrupt: pauses the graph for missing user input, merges the resume answer into
+#   the pending tool arguments, and sends the completed proposal back to execute_tool.
+# - compose_final_response: produces the bounded user-facing response for successful, blocked, or
+#   failed tool outcomes, then continues to memory update outside this module.
+# - finalize_turn: compacts old checkpoint messages and trims audit collections before END.
+#
+# Routes returned by this module are symbolic edge labels consumed by
+# src/adapters/langgraph/engine/graph.py.
 
 
 def function_tools(allowed_tools: list[str]) -> list[dict[str, Any]]:
@@ -72,14 +93,20 @@ def agent_decision(*, llm_client: LLMClient | None, model: str):
             message = "Acción completada."
             if events:
                 message = f"Acción completada y registrada ({len(events)} evento(s))."
+            set_current_span_attributes({"victus.node": "agent_decision", "victus.decision": "final"})
             return _merge(
                 state,
-                response={"mode": "final", "user_message": message, "internal_notes": []},
+                response={"mode": "final", "user_message": message},
                 node_name="agent_decision",
             )
         if llm_client is None:
-            calls = [{"name": "event_capture", "arguments": {}}]
-            text = ""
+            set_current_span_attributes({"victus.node": "agent_decision", "victus.decision": "final"})
+            return _merge(
+                state,
+                response={"mode": "final", "user_message": "Entendido."},
+                tool_context={**tool_context, "proposed_action": {}},
+                node_name="agent_decision",
+            )
         else:
             response = await llm_client.acomplete(
                 LLMRequest(
@@ -103,9 +130,10 @@ def agent_decision(*, llm_client: LLMClient | None, model: str):
             text = response.text
 
         if not calls:
+            set_current_span_attributes({"victus.node": "agent_decision", "victus.decision": "final"})
             return _merge(
                 state,
-                response={"mode": "final", "user_message": text or "Entendido.", "internal_notes": []},
+                response={"mode": "final", "user_message": text or "Entendido."},
                 tool_context={**tool_context, "proposed_action": {}},
                 node_name="agent_decision",
             )
@@ -138,14 +166,20 @@ def agent_decision(*, llm_client: LLMClient | None, model: str):
         arguments = dict(arguments)
         if "user_id" in get_tool(name).input_schema.get("properties", {}):
             arguments["user_id"] = user_id
-        if name in EXACT_TEXT_TOOLS:
-            arguments["normalized_text"] = str(request.get("original_text") or "")
         call_id = str(call.get("id") or "tool")
         proposal = ProposedAction(
             tool_name=name,
             arguments=arguments,
             call_id=call_id,
             requires_confirmation=_requires_confirmation(name, arguments),
+        )
+        set_current_span_attributes(
+            {
+                "victus.node": "agent_decision",
+                "victus.decision": "tool",
+                "victus.tool.name": name,
+                "victus.tool.requires_confirmation": proposal.requires_confirmation,
+            }
         )
         return _merge(
             state,
@@ -195,7 +229,6 @@ def confirmation_interrupt(state: VictusGraphState) -> VictusGraphState:
             response={
                 "mode": "final",
                 "user_message": "Acción cancelada.",
-                "internal_notes": ["confirmation_declined"],
             },
             node_name="confirmation_interrupt",
         )
@@ -217,6 +250,7 @@ def execute_tool(runtime: ToolRuntime):
                         subject=str(request.get("user_id")),
                         authenticated=True,
                     ),
+                    original_text=str(request.get("original_text") or ""),
                     trace_id=str(request.get("trace_id") or "") or None,
                     idempotency_key=(
                         f"{request.get('conversation_id')}:{request.get('request_id')}:"
@@ -226,10 +260,27 @@ def execute_tool(runtime: ToolRuntime):
             )
         )
         dumped = {"tool_name": proposal.get("tool_name"), **result.model_dump(mode="json")}
+        _annotate_tool_result(dumped)
         results = [*tool_context.get("tool_results", []), dumped]
+        pending_clarification = None
+        if dumped.get("status") == "needs_clarification":
+            pending_clarification = {
+                "tool_name": proposal.get("tool_name"),
+                "arguments": dict(proposal.get("arguments") or {}),
+                "missing_fields": (dumped.get("clarification") or {}).get("missing_fields", []),
+            }
         return _merge(
             state,
-            tool_context={**tool_context, "last_tool_result": dumped, "tool_results": results},
+            tool_context={
+                **tool_context,
+                "last_tool_result": dumped,
+                "tool_results": results,
+                **(
+                    {"pending_clarification": pending_clarification}
+                    if pending_clarification is not None
+                    else {}
+                ),
+            },
             messages=[
                 {
                     "role": "tool",
@@ -243,30 +294,163 @@ def execute_tool(runtime: ToolRuntime):
     return node
 
 
-def clarification_interrupt(state: VictusGraphState) -> VictusGraphState:
-    result = state.get("tool_context", {}).get("last_tool_result", {})
-    clarification = result.get("clarification") or {}
-    answer = interrupt(
-        {
-            "kind": "clarification",
-            "question": clarification.get("question") or "Necesito más información.",
-            "missing_fields": clarification.get("missing_fields", []),
-            "expected_answer_type": clarification.get("expected_answer_type", "free_text"),
+def clarification_interrupt(*, llm_client: LLMClient | None, model: str):
+    async def node(state: VictusGraphState) -> VictusGraphState:
+        result = state.get("tool_context", {}).get("last_tool_result", {})
+        clarification = result.get("clarification") or {}
+        question = _prefabricated_clarification_question(clarification)
+        set_current_span_attributes(
+            {
+                "victus.node": "clarification_interrupt",
+                "victus.interrupt.kind": "clarification",
+                "victus.clarification.question": question,
+                "victus.clarification.missing_fields": ",".join(
+                    str(field) for field in clarification.get("missing_fields", [])
+                ),
+            }
+        )
+        answer = interrupt(
+            {
+                "kind": "clarification",
+                "question": question,
+                "missing_fields": clarification.get("missing_fields", []),
+                "expected_answer_type": clarification.get("expected_answer_type", "free_text"),
+            }
+        )
+        answer_text = str(answer.get("answer") if isinstance(answer, dict) else answer)
+        request = dict(state.get("request", {}))
+        request["original_text"] = answer_text
+        request["working_text"] = answer_text
+        tool_context = dict(state.get("tool_context", {}))
+        pending = tool_context.get("pending_clarification", {})
+        if not llm_client:
+            return _merge(
+                state,
+                request=request,
+                response={
+                    "mode": "error",
+                    "user_message": "No fue posible completar la aclaración.",
+                },
+                node_name="clarification_interrupt",
+            )
+        merged = await _merge_clarification_answer(
+            llm_client=llm_client,
+            model=model,
+            pending=pending if isinstance(pending, dict) else {},
+            answer_text=answer_text,
+            request=request,
+        )
+        if merged is None:
+            return _merge(
+                state,
+                request=request,
+                response={
+                    "mode": "error",
+                    "user_message": "No fue posible completar la aclaración.",
+                },
+                node_name="clarification_interrupt",
+            )
+        proposed = {
+            "tool_name": str(pending.get("tool_name") or "event_capture"),
+            "arguments": merged,
+            "call_id": "clarification_merge",
+            "requires_confirmation": False,
         }
+        tool_context["proposed_action"] = proposed
+        tool_context.pop("last_tool_result", None)
+        tool_context.pop("pending_clarification", None)
+        return _merge(
+            state,
+            request=request,
+            messages=[
+                {"role": "user", "content": answer_text},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": proposed["call_id"],
+                            "type": "function",
+                            "function": {
+                                "name": proposed["tool_name"],
+                                "arguments": json.dumps(merged, ensure_ascii=False),
+                            },
+                        }
+                    ],
+                },
+            ],
+            tool_context=tool_context,
+            node_name="clarification_interrupt",
+        )
+
+    return node
+
+
+def _prefabricated_clarification_question(clarification: dict[str, Any]) -> str:
+    missing_fields = clarification.get("missing_fields", [])
+    if not isinstance(missing_fields, list) or not missing_fields:
+        return "Genial, pero me hacen falta algunos campos."
+    fields = ", ".join(str(field) for field in missing_fields)
+    return f"Genial, pero me hacen falta los campos: {fields}."
+
+
+async def _merge_clarification_answer(
+    *,
+    llm_client: LLMClient,
+    model: str,
+    pending: dict[str, Any],
+    answer_text: str,
+    request: dict[str, Any],
+) -> dict[str, Any] | None:
+    response = await llm_client.acomplete(
+        LLMRequest(
+            operation="agent.clarification_merge",
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Fusiona la respuesta de aclaración del usuario dentro de los argumentos "
+                        "pendientes de la herramienta. Devuelve solo un objeto JSON válido con los "
+                        "argumentos completos para event_capture. No cambies campos existentes salvo "
+                        "que estén listados en missing_fields. La unidad solo puede ser g o ml; no "
+                        "uses unidades caseras, piezas ni porciones. Si la respuesta no permite "
+                        "completar los campos faltantes en g o ml, conserva los campos incompletos "
+                        "como null."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "tool_name": pending.get("tool_name"),
+                            "pending_arguments": pending.get("arguments", {}),
+                            "missing_fields": pending.get("missing_fields", []),
+                            "clarification_answer": answer_text,
+                            "request_context": {
+                                "locale": request.get("locale"),
+                                "timezone": request.get("timezone"),
+                            },
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                },
+            ],
+            temperature=0,
+            max_tokens=500,
+            response_format={"type": "json_object"},
+            metadata={
+                "conversation_id": request.get("conversation_id"),
+                "request_id": request.get("request_id"),
+            },
+        )
     )
-    request = dict(state.get("request", {}))
-    request["original_text"] = str(answer.get("answer") if isinstance(answer, dict) else answer)
-    request["working_text"] = request["original_text"]
-    tool_context = dict(state.get("tool_context", {}))
-    tool_context["proposed_action"] = {}
-    tool_context.pop("last_tool_result", None)
-    return _merge(
-        state,
-        request=request,
-        messages=[{"role": "user", "content": request["original_text"]}],
-        tool_context=tool_context,
-        node_name="clarification_interrupt",
-    )
+    try:
+        parsed = json.loads(response.text)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def finalize_turn(state: VictusGraphState) -> VictusGraphState:
@@ -315,7 +499,7 @@ def compose_final_response(state: VictusGraphState) -> VictusGraphState:
         message, mode = str(error.get("message") or "No fue posible completar la acción."), "error"
     return _merge(
         state,
-        response={"mode": mode, "user_message": message, "internal_notes": []},
+        response={"mode": mode, "user_message": message},
         node_name="compose_final_response",
     )
 
@@ -328,6 +512,10 @@ def route_after_decision(state: VictusGraphState) -> str:
 
 
 def route_after_confirmation(state: VictusGraphState) -> str:
+    return "response" if state.get("response", {}).get("user_message") else "execute"
+
+
+def route_after_clarification(state: VictusGraphState) -> str:
     return "response" if state.get("response", {}).get("user_message") else "execute"
 
 
@@ -346,14 +534,16 @@ def _decision_prompt(state: VictusGraphState) -> str:
         "original_text": state.get("request", {}).get("original_text"),
         "memories": state.get("memory", {}).get("recalled", []),
         "compact_summary": state.get("memory", {}).get("compact_summary", ""),
-        "projections": state.get("projections", {}),
         "previous_tool_result": state.get("tool_context", {}).get("last_tool_result"),
     }
     return (
         "Eres el agente Victus. Selecciona como máximo una herramienta canónica o responde sin "
-        "herramienta. Nunca cambies la identidad autenticada. Conserva el texto original exacto "
-        "en normalized_text. Si ya existe un resultado exitoso, responde al usuario sin repetir la "
-        f"mutación. Contexto acotado: {json.dumps(context, ensure_ascii=False, default=str)}"
+        "herramienta. Nunca cambies la identidad autenticada. Si ya existe un resultado exitoso, "
+        "responde al usuario sin repetir la mutación. Para event_capture, quantity y unit deben "
+        "venir explícitamente del usuario en gramos o mililitros. Si el usuario dice una unidad "
+        "natural como 'un pollo', 'una porción' o 'un vaso' sin gramos ni mililitros, usa null en "
+        "quantity y unit para activar aclaración. No inventes 1 g, 1 ml ni una unidad por defecto. "
+        f"Contexto acotado: {json.dumps(context, ensure_ascii=False, default=str)}"
     )
 
 
@@ -365,10 +555,30 @@ def _requires_confirmation(name: str, arguments: dict[str, Any]) -> bool:
 
 
 def _error_response(state: VictusGraphState, message: str, code: str) -> VictusGraphState:
+    set_current_span_attributes(
+        {"victus.node": "agent_decision", "victus.decision": "error", "victus.error.code": code}
+    )
     return _merge(
         state,
-        response={"mode": "error", "user_message": message, "internal_notes": [code]},
+        response={"mode": "error", "user_message": message},
         node_name="agent_decision",
+    )
+
+
+def _annotate_tool_result(result: dict[str, Any]) -> None:
+    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    clarification = result.get("clarification") if isinstance(result.get("clarification"), dict) else {}
+    set_current_span_attributes(
+        {
+            "victus.node": "execute_tool",
+            "victus.tool.name": str(result.get("tool_name") or ""),
+            "victus.tool.status": str(result.get("status") or "unknown"),
+            "victus.tool.events_emitted": len(result.get("events_emitted") or []),
+            "victus.capture_action": str(data.get("capture_action") or ""),
+            "victus.clarification.missing_fields": ",".join(
+                str(field) for field in clarification.get("missing_fields", [])
+            ),
+        }
     )
 
 

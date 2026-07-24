@@ -6,21 +6,29 @@ import os
 from typing import Any
 
 from victus_platform.llm.contracts import LLMRequest, LLMResponse
-from victus_platform.telemetry.phoenix import record_llm_usage, trace_llm_call
+from victus_platform.telemetry.phoenix import (
+    capture_phoenix_trace_context,
+    record_llm_response,
+    record_llm_usage,
+    trace_llm_call,
+)
 
 
 class LiteLLMClient:
-    def complete(self, request: LLMRequest) -> LLMResponse:
+    def complete(self, request: LLMRequest, *, parent_context: Any | None = None) -> LLMResponse:
         import litellm
 
-        with trace_llm_call(request) as span:
+        with trace_llm_call(request, parent_context=parent_context) as span:
             raw = litellm.completion(**self._kwargs(request))
-            response = self._to_response(raw)
+            raw_data = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+            record_llm_response(span, raw_data)
+            response = self._to_response(raw_data)
             record_llm_usage(span, response.usage)
             return response
 
     async def acomplete(self, request: LLMRequest) -> LLMResponse:
-        return await asyncio.to_thread(self.complete, request)
+        parent_context = capture_phoenix_trace_context()
+        return await asyncio.to_thread(self.complete, request, parent_context=parent_context)
 
     def _kwargs(self, request: LLMRequest) -> dict[str, Any]:
         proxy_base = os.getenv("LITELLM_PROXY_API_BASE")
@@ -58,11 +66,7 @@ class LiteLLMClient:
 
         return kwargs
 
-    def _to_response(self, raw: Any) -> LLMResponse:
-        if hasattr(raw, "model_dump"):
-            data = raw.model_dump()
-        else:
-            data = dict(raw)
+    def _to_response(self, data: dict[str, Any]) -> LLMResponse:
 
         choices = data.get("choices") or []
         message = choices[0].get("message") if choices else {}

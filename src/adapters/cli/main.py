@@ -109,7 +109,11 @@ def main() -> int:
     if args.command == "tool-run":
         return _mcp_call(args.tool_name, args.arguments_json)
     if args.command == "db-upgrade":
-        return _run([sys.executable, "-m", "alembic", "-c", ALEMBIC_CONFIG, "upgrade", "head"])
+        from victus_platform.database.setup import schema_setup_lock, upgrade_database_schema
+
+        with schema_setup_lock() as url:
+            upgrade_database_schema(url)
+        return 0
     if args.command == "db-current":
         return _run([sys.executable, "-m", "alembic", "-c", ALEMBIC_CONFIG, "current"])
     if args.command == "langgraph-storage-setup":
@@ -323,11 +327,6 @@ def _self_harm_safety_state(query: str) -> dict[str, object]:
             "decision": "route_to_safety_triage" if is_self_harm else "allow",
             "severity": "high" if is_self_harm else "none",
             "categories": ["self_harm"] if is_self_harm else ["none"],
-            "matched_rules": [],
-            "reason_codes": ["local_self_harm_keyword"] if is_self_harm else [],
-            "blocked_tools": ["planning", "event_capture", "profile_update"] if is_self_harm else [],
-            "allowed_next_route": "SafetyTriageRoute" if is_self_harm else "ToolRegistry",
-            "audit_required": is_self_harm,
         }
 
     result = SafetyPrecheck().check(
@@ -338,15 +337,10 @@ def _self_harm_safety_state(query: str) -> dict[str, object]:
     )
     return {
         "status": "ok" if result.decision == "allow" else "blocked",
-        "reasons": result.reason_codes,
+        "reasons": result.reasons,
         "decision": result.decision,
         "severity": result.severity,
         "categories": result.categories,
-        "matched_rules": result.matched_rules,
-        "reason_codes": result.reason_codes,
-        "blocked_tools": result.blocked_tools,
-        "allowed_next_route": result.allowed_next_route,
-        "audit_required": result.audit_required,
     }
 
 

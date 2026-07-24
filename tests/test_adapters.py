@@ -9,14 +9,30 @@ from adapters.cli.commands import inspect_tool, list_tool_data
 from adapters.http.app import create_app as create_chat_app
 from adapters.langgraph.engine.graph import build_graph
 from adapters.mcp.discovery import discover_tools
-from tools.contracts import ClarificationRequest, ToolMeta, ToolResult
+from tools.contracts import ClarificationRequest, ToolResult
 from victus_platform.llm.contracts import LLMRequest, LLMResponse
 from victus_platform.llm.litellm_client import LiteLLMClient
 
 
 def test_langgraph_executes_runtime_and_blocks_unsafe_turns() -> None:
+    client = SequenceClient(
+        [
+            LLMResponse(
+                text="",
+                tool_calls=[
+                    {
+                        "name": "event_capture",
+                        "arguments": {
+                            "items": [{"name": "arroz", "quantity": 100, "unit": "g"}],
+                        },
+                    }
+                ],
+            ),
+            LLMResponse(text="Registrado.", tool_calls=[]),
+        ]
+    )
     allowed = asyncio.run(
-        build_graph().ainvoke(
+        build_graph(llm_client=client).ainvoke(
             {
                 "request": {
                     "request_id": "r1",
@@ -28,7 +44,12 @@ def test_langgraph_executes_runtime_and_blocks_unsafe_turns() -> None:
         )
     )
     assert allowed["tool_context"]["last_tool_result"]["data"]["capture_action"] == "log_meal"
+    assert allowed["tool_context"]["allowed_tools"] == ["event_capture"]
+    assert [tool["function"]["name"] for tool in client.requests[0].tools or []] == [
+        "event_capture"
+    ]
     assert allowed["audit"]["node_path"][-1] == "finalize_turn"
+    assert "intent" not in allowed
 
     blocked = asyncio.run(
         build_graph(safety_client=BlockedSafetyClient()).ainvoke(
@@ -45,9 +66,10 @@ def test_langgraph_executes_runtime_and_blocks_unsafe_turns() -> None:
     assert blocked["safety"]["status"] == "blocked"
     assert blocked["tool_context"]["allowed_tools"] == []
     assert "last_tool_result" not in blocked["tool_context"]
+    assert "intent" not in blocked
 
 
-def test_langgraph_model_selection_enforces_identity_and_exact_text() -> None:
+def test_langgraph_model_selection_keeps_identity_and_text_out_of_tool_arguments() -> None:
     client = SequenceClient(
         [
             LLMResponse(
@@ -56,7 +78,7 @@ def test_langgraph_model_selection_enforces_identity_and_exact_text() -> None:
                     {
                         "id": "call-1",
                         "name": "event_capture",
-                        "arguments": {"user_id": "u1", "normalized_text": "changed"},
+                        "arguments": {"items": [{"name": "arroz", "quantity": 100, "unit": "g"}]},
                     }
                 ],
             ),
@@ -76,9 +98,14 @@ def test_langgraph_model_selection_enforces_identity_and_exact_text() -> None:
             }
         )
     )
-    assert runtime.invocations[0].arguments["normalized_text"] == "Hoy comí arroz"
+    assert runtime.invocations[0].arguments == {
+        "items": [{"name": "arroz", "quantity": 100, "unit": "g"}]
+    }
+    assert runtime.invocations[0].context.original_text == "Hoy comí arroz"
     assert result["tool_context"]["last_tool_result"]["status"] == "success"
     assert result["response"]["user_message"] == "Registrado."
+    assert "load_domain_projections" not in result["audit"]["node_path"]
+    assert '"projections"' not in client.requests[0].messages[0]["content"]
 
     changed_identity = asyncio.run(
         build_graph(
@@ -89,7 +116,7 @@ def test_langgraph_model_selection_enforces_identity_and_exact_text() -> None:
                         tool_calls=[
                             {
                                 "name": "event_capture",
-                                "arguments": {"user_id": "other", "normalized_text": "x"},
+                                "arguments": {"user_id": "other", "items": [{"name": "arroz", "quantity": 100, "unit": "g"}]},
                             }
                         ],
                     )
@@ -107,7 +134,7 @@ def test_langgraph_model_selection_enforces_identity_and_exact_text() -> None:
         )
     )
     assert changed_identity["response"]["mode"] == "error"
-    assert "identity" in changed_identity["response"]["internal_notes"][0]
+    assert "identity" in changed_identity["response"]["user_message"]
 
 
 def test_langgraph_confirmation_resumes_once_and_memory_is_user_scoped() -> None:
@@ -242,13 +269,15 @@ def test_langgraph_clarification_survives_checkpoint_resume() -> None:
                     expected_answer_type="time",
                 ),
             ),
-            ToolResult(status="success", meta=ToolMeta(trace_id="trace-2")),
+            ToolResult(status="success"),
         ]
     )
     client = SequenceClient(
         [
-            LLMResponse(text="", tool_calls=[{"name": "event_capture", "arguments": {"user_id": "u1"}}]),
-            LLMResponse(text="", tool_calls=[{"name": "event_capture", "arguments": {"user_id": "u1"}}]),
+            LLMResponse(text="", tool_calls=[{"name": "event_capture", "arguments": {"items": [{"name": "arroz"}]}}]),
+            LLMResponse(
+                text='{"items":[{"name":"arroz","quantity":150,"unit":"g"}],"occurred_at_text":"today"}'
+            ),
             LLMResponse(text="Registrado con la hora.", tool_calls=[]),
         ]
     )
@@ -267,10 +296,30 @@ def test_langgraph_clarification_survives_checkpoint_resume() -> None:
             config=config,
         )
     )
-    assert paused["__interrupt__"][0].value["question"] == "¿A qué hora?"
-    resumed = asyncio.run(graph.ainvoke(Command(resume={"answer": "a las 13:00"}), config=config))
+    assert paused["__interrupt__"][0].value["question"] == (
+        "Genial, pero me hacen falta los campos: time."
+    )
+    resumed = asyncio.run(graph.ainvoke(Command(resume={"answer": "150 g"}), config=config))
     assert resumed["response"]["user_message"] == "Registrado con la hora."
-    assert runtime.invocations[-1].arguments["normalized_text"] == "a las 13:00"
+    assert runtime.invocations[-1].arguments == {
+        "items": [{"name": "arroz", "quantity": 150, "unit": "g"}],
+        "occurred_at_text": "today",
+    }
+    assert runtime.invocations[-1].context.original_text == "150 g"
+    assert client.requests[1].operation == "agent.clarification_merge"
+    final_messages = client.requests[2].messages
+    tool_response = next(
+        message
+        for message in final_messages
+        if message.get("role") == "tool" and message.get("tool_call_id") == "clarification_merge"
+    )
+    assistant_call = next(
+        message
+        for message in final_messages
+        if message.get("role") == "assistant"
+        and any(call.get("id") == "clarification_merge" for call in message.get("tool_calls", []))
+    )
+    assert tool_response["tool_call_id"] == assistant_call["tool_calls"][0]["id"]
 
 
 def test_chat_api_authenticates_and_enforces_thread_ownership() -> None:
@@ -398,7 +447,7 @@ def test_chat_debug_is_opt_in_and_redacts_sensitive_state() -> None:
     assert "do-not-return" not in response.text
 
 
-def test_chat_rejects_message_while_interrupt_is_pending() -> None:
+def test_chat_auto_resumes_clarification_when_message_arrives_while_pending() -> None:
     from starlette.testclient import TestClient
 
     graph = PendingInterruptGraph()
@@ -415,13 +464,9 @@ def test_chat_rejects_message_while_interrupt_is_pending() -> None:
             json={"conversation_id": "paused", "request_id": "r2", "message": "a las 13:00"},
         )
 
-    assert response.status_code == 409
-    assert response.json() == {
-        "error": "conversation is awaiting a response",
-        "message": "Resume the pending interrupt instead of sending a new message.",
-        "pending_nodes": ["clarification_interrupt"],
-    }
-    assert graph.invoked is False
+    assert response.status_code == 200
+    assert graph.invoked is True
+    assert graph.last_resume == {"answer": "a las 13:00"}
 
 
 def test_mcp_discovers_catalog_and_serves_http_health() -> None:
@@ -429,9 +474,18 @@ def test_mcp_discovers_catalog_and_serves_http_health() -> None:
 
     from adapters.mcp.transport import MCP_PATH, create_app
 
-    assert [tool.name for tool in discover_tools()][0] == "event_capture"
-    with TestClient(create_app()) as client:
+    prepared = False
+
+    async def prepare_storage() -> None:
+        nonlocal prepared
+        prepared = True
+
+    discovered_tools = [tool.name for tool in discover_tools()]
+    assert discovered_tools[0] == "event_capture"
+    assert discovered_tools == ["event_capture"]
+    with TestClient(create_app(storage_preparer=prepare_storage)) as client:
         response = client.get("/health")
+    assert prepared is True
     assert response.status_code == 200
     assert response.json()["transport"] == "streamable_http"
     assert MCP_PATH == "/mcp"
@@ -483,7 +537,7 @@ class RecordingRuntime:
 
     async def invoke_async(self, invocation):
         self.invocations.append(invocation)
-        return ToolResult(status="success", meta=ToolMeta(trace_id="trace-1"))
+        return ToolResult(status="success")
 
 
 class SequenceRuntime(RecordingRuntime):
@@ -527,6 +581,7 @@ class DebugStateGraph:
 class PendingInterruptGraph:
     def __init__(self):
         self.invoked = False
+        self.last_resume = None
 
     async def aget_state(self, config):
         return SimpleNamespace(
@@ -539,4 +594,14 @@ class PendingInterruptGraph:
 
     async def ainvoke(self, graph_input, *, config):
         self.invoked = True
-        raise AssertionError("graph must not be invoked for a message while paused")
+        self.last_resume = graph_input.resume
+        return {
+            "graph_version": "1",
+            "request": {
+                "request_id": "r2",
+                "user_id": config["configurable"]["user_id"],
+                "conversation_id": config["configurable"]["thread_id"],
+            },
+            "response": {"mode": "final", "user_message": "Aclaración recibida."},
+            "audit": {"node_path": ["finalize_turn"]},
+        }

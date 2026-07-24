@@ -20,7 +20,7 @@ From the repository root:
 
 ```bash
 uv run victus mcp-list-tools
-uv run victus mcp-call event_capture '{"user_id":"local-smoke-user","normalized_text":"hoy comi arroz"}'
+uv run victus mcp-call event_capture '{"items":[{"name":"arroz","quantity":100,"unit":"g"}]}'
 DATABASE_URL=postgresql+psycopg://victus:victus@localhost:5432/victus \
   uv run victus mcp-call profile_update '{"user_id":"local-smoke-user","normalized_text":"soy intolerante a la lactosa"}'
 BACKEND_API_URL=http://localhost:8000 uv run victus login
@@ -46,8 +46,8 @@ recuperar_perfil
 for supported actions when `DATABASE_URL` points at a migrated event store. Without `DATABASE_URL`,
 local MCP calls still classify and return the decision envelope without appended events.
 
-`event_capture` follows the same pattern for supported non-safety-blocked capture events such as
-`meal.logged`, `biometrics.logged`, `lifestyle_metric.logged`, and `symptom.logged`.
+`event_capture` follows the same pattern for supported meal capture events and emits
+`meal.logged`.
 
 `planning`, `feedback`, `evidence_answer`, `clarification`, and `confirmation` expose structured
 action inputs and can append their contracted V1 events when `DATABASE_URL` points at a migrated

@@ -45,7 +45,6 @@ def self_harm_response(policy_path: str | Path = DEFAULT_RESPONSE_POLICY):
             response={
                 "mode": response["mode"],
                 "user_message": response["user_message"],
-                "internal_notes": list(safety.get("reason_codes", [])),
             },
             node_name="self_harm_response",
         )

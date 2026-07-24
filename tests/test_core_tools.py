@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import nullcontext
 
 from domain.events.envelope import UserEventEnvelope
@@ -6,55 +7,55 @@ from ops.scripts.phoenix_intent_eval import (
     dataset_examples,
     evaluation_passed,
 )
-from tools.catalog import get_tool, list_tools
-from tools.contracts import ToolContext, ToolIdentity, ToolInvocation, ToolServices
-from tools.profile.contract import ProfileGatewayResponse
-from tools.runtime import ToolRuntime
 from ops.scripts.mcp_intent_eval import function_tools, score_case
-from victus_platform.telemetry.phoenix import initialize_phoenix, trace_llm_call
+from tools.catalog import get_tool, list_tools
+from tools.contracts import ToolContext, ToolIdentity, ToolInvocation
+from tools.runtime import ToolRuntime
+from victus_platform.llm.contracts import LLMRequest, LLMResponse
+from victus_platform.llm.litellm_client import LiteLLMClient
+from victus_platform.telemetry.phoenix import (
+    capture_phoenix_trace_context,
+    initialize_phoenix,
+    record_llm_response,
+    trace_llm_call,
+    _record_llm_request,
+)
 
 
 def test_catalog_and_capabilities_share_one_runtime() -> None:
     definitions = list_tools(exposure="mcp")
     names = [definition.name for definition in definitions]
-    assert names == [
-        "event_capture",
-        "profile_update",
-        "planning",
-        "feedback",
-        "evidence_answer",
-        "clarification",
-        "confirmation",
-        "recuperar_perfil",
-    ]
+    assert names == ["event_capture"]
     assert all(get_tool(name).input_schema for name in names)
     assert all("Use " in definition.description for definition in definitions)
     assert all("Do not use" in definition.description for definition in definitions)
-    assert "concrete event" in get_tool("event_capture").description
-    assert "durable profile information" in get_tool("profile_update").description
-    assert "Continuation mechanism" in get_tool("clarification").description
-    assert "read-only" in get_tool("recuperar_perfil").description
+    assert "meal or beverage" in get_tool("event_capture").description
+    event_schema = get_tool("event_capture").input_schema
+    item_def = event_schema["properties"]["items"]["items"]
+    assert "$defs" not in event_schema
+    assert "$ref" not in item_def
+    assert set(event_schema["properties"]) == {"items", "occurred_at_text"}
+    assert event_schema["required"] == ["items"]
+    assert item_def["required"] == ["name", "quantity", "unit"]
+    assert "name" in item_def["properties"]
+    assert "quantity" in item_def["properties"]
+    assert "unit" in item_def["properties"]
+    assert item_def["properties"]["unit"]["anyOf"][0]["enum"] == ["g", "ml"]
+    assert "food_label" not in item_def["properties"]
 
-    cases = [
-        ("event_capture", {"user_id": "u1", "normalized_text": "hoy comi arroz"}, "success"),
-        ("profile_update", {"user_id": "u1", "normalized_text": "soy intolerante a lactosa"}, "success"),
-        ("planning", {"user_id": "u1", "action": "set_goal", "primary_goal": "health"}, "success"),
-        ("feedback", {"user_id": "u1", "action": "record", "target_type": "plan", "text": "bien"}, "success"),
-        ("evidence_answer", {"user_id": "u1", "action": "generate_claim", "text": "claim", "grounded": True}, "success"),
-        ("clarification", {"user_id": "u1", "action": "request", "missing_fields": ["time"], "question": "Cuando?"}, "needs_clarification"),
-        ("confirmation", {"user_id": "u1", "action": "request", "question": "Confirmas?"}, "needs_clarification"),
-    ]
-    for name, arguments, status in cases:
-        store = FakeEventStore()
-        result = ToolRuntime(lambda: nullcontext(store)).invoke(
-            ToolInvocation(
-                name=name,
-                arguments=arguments,
-                context=ToolContext(source="test"),
-            )
+    store = FakeEventStore()
+    result = ToolRuntime(lambda: nullcontext(store)).invoke(
+        ToolInvocation(
+            name="event_capture",
+            arguments={"items": [{"name": "arroz", "quantity": 100, "unit": "g"}]},
+            context=ToolContext(
+                source="test", identity=ToolIdentity(subject="u1", authenticated=True)
+            ),
         )
-        assert result.status == status
-        assert result.events_emitted
+    )
+    assert result.status == "success"
+    assert result.events_emitted
+    assert result.data["occurred_at_text"] == "today"
 
 
 def test_runtime_applies_trace_idempotency_and_normalizes_errors() -> None:
@@ -63,13 +64,18 @@ def test_runtime_applies_trace_idempotency_and_normalizes_errors() -> None:
     result = runtime.invoke(
         ToolInvocation(
             name="event_capture",
-            arguments={"user_id": "u1", "normalized_text": "hoy comi arroz"},
+            arguments={
+                "items": [{"name": "arroz", "quantity": 100, "unit": "g"}],
+            },
             context=ToolContext(
-                source="test", trace_id="trace-1", idempotency_key="request-1"
+                source="test",
+                identity=ToolIdentity(subject="u1", authenticated=True),
+                original_text="hoy comi arroz",
+                trace_id="trace-1",
+                idempotency_key="request-1",
             ),
         )
     )
-    assert result.meta.trace_id == "trace-1"
     assert store.appended is not None
     assert store.appended.idempotency_key == "request-1"
     assert store.appended.metadata.trace_id == "trace-1"
@@ -81,40 +87,100 @@ def test_runtime_applies_trace_idempotency_and_normalizes_errors() -> None:
     assert rejected.error and rejected.error.code == "invalid_invocation"
 
 
-def test_authenticated_tool_without_user_id_schema_uses_context_identity() -> None:
-    import asyncio
-
-    runtime = ToolRuntime(
-        services=ToolServices({"profile_gateway": FakeProfileGateway()}),
-    )
-    result = asyncio.run(
-        runtime.invoke_async(
-            ToolInvocation(
-                name="recuperar_perfil",
-                arguments={},
-                context=ToolContext(
-                    source="langgraph",
-                    identity=ToolIdentity(subject="u1", authenticated=True),
-                ),
-            )
-        )
-    )
-    assert result.status == "success"
-
-
-def test_event_capture_blocks_safety_risk_without_redundant_decision_fields() -> None:
+def test_event_capture_rejects_non_meal_actions() -> None:
     store = FakeEventStore()
     result = ToolRuntime(lambda: nullcontext(store)).invoke(
         ToolInvocation(
             name="event_capture",
-            arguments={"user_id": "u1", "normalized_text": "tengo dolor en el pecho fuerte"},
-            context=ToolContext(source="test"),
+            arguments={
+                "capture_action": "log_symptom",
+            },
+            context=ToolContext(
+                source="test", identity=ToolIdentity(subject="u1", authenticated=True)
+            ),
         )
     )
-    assert result.status == "blocked"
+    assert result.status == "rejected"
     assert result.events_emitted == []
     assert store.appended is None
-    assert not {"selected_skill", "capture_entity_type", "event_type_candidate"} & set(result.data)
+    assert result.error is not None
+    assert "Extra inputs" in result.error.message
+
+
+def test_event_capture_records_the_supplied_meal_items() -> None:
+    store = FakeEventStore()
+    result = ToolRuntime(lambda: nullcontext(store)).invoke(
+        ToolInvocation(
+            name="event_capture",
+            arguments={
+                "items": [
+                    {"name": "tallarines", "quantity": 150, "unit": "g"},
+                    {"name": "salsa", "quantity": 30, "unit": "g"},
+                ],
+            },
+            context=ToolContext(
+                source="test", identity=ToolIdentity(subject="u1", authenticated=True)
+            ),
+        )
+    )
+
+    assert result.status == "success"
+    assert result.events_emitted
+    assert store.appended is not None
+
+
+def test_event_capture_requests_clarification_for_missing_quantity() -> None:
+    result = ToolRuntime(lambda: nullcontext(FakeEventStore())).invoke(
+        ToolInvocation(
+            name="event_capture",
+            arguments={"items": [{"name": "arroz"}]},
+            context=ToolContext(
+                source="test", identity=ToolIdentity(subject="u1", authenticated=True)
+            ),
+        )
+    )
+
+    assert result.status == "needs_clarification"
+    assert result.clarification is not None
+    assert result.clarification.missing_fields == ["items[0].quantity", "items[0].unit"]
+
+
+def test_event_capture_requests_clarification_for_inferred_single_gram() -> None:
+    result = ToolRuntime(lambda: nullcontext(FakeEventStore())).invoke(
+        ToolInvocation(
+            name="event_capture",
+            arguments={"items": [{"name": "pollo", "quantity": 1, "unit": "g"}]},
+            context=ToolContext(
+                source="test",
+                identity=ToolIdentity(subject="u1", authenticated=True),
+                original_text="hoy me comi un pollo",
+            ),
+        )
+    )
+
+    assert result.status == "needs_clarification"
+    assert result.clarification is not None
+    assert result.clarification.missing_fields == ["items[0].quantity", "items[0].unit"]
+    assert result.events_emitted == []
+
+
+def test_event_capture_rejects_noncanonical_item_shape() -> None:
+    result = ToolRuntime(lambda: nullcontext(FakeEventStore())).invoke(
+        ToolInvocation(
+            name="event_capture",
+            arguments={
+                "items": [{"food_label": "fideos con salsa", "quantity": 100, "unit": "g"}],
+            },
+            context=ToolContext(
+                source="test", identity=ToolIdentity(subject="u1", authenticated=True)
+            ),
+        )
+    )
+
+    assert result.status == "rejected"
+    assert result.error is not None
+    assert result.error.code == "invalid_invocation"
+    assert "Extra inputs are not permitted" in result.error.message
 
 
 def test_intent_eval_uses_catalog_and_checks_exact_input() -> None:
@@ -206,8 +272,100 @@ def test_phoenix_intent_dataset_and_contract_evaluator_reuse_existing_scoring() 
 def test_phoenix_tracing_is_disabled_by_default(monkeypatch) -> None:
     monkeypatch.delenv("PHOENIX_TRACING_ENABLED", raising=False)
     assert initialize_phoenix() is None
+    assert capture_phoenix_trace_context() is None
     with trace_llm_call(object()) as span:
         assert span is None
+
+
+def test_phoenix_llm_attributes_expose_messages_tools_and_tool_calls() -> None:
+    class Span:
+        def __init__(self) -> None:
+            self.attributes = {}
+
+        def set_attribute(self, key, value) -> None:
+            self.attributes[key] = value
+
+    class Attributes:
+        INPUT_VALUE = "input.value"
+        INPUT_MIME_TYPE = "input.mime_type"
+        LLM_INPUT_MESSAGES = "llm.input_messages"
+        LLM_TOOLS = "llm.tools"
+        LLM_INVOCATION_PARAMETERS = "llm.invocation_parameters"
+
+    request = LLMRequest(
+        operation="agent.decision",
+        model="test-model",
+        messages=[
+            {"role": "system", "content": "Decide."},
+            {"role": "user", "content": "Registra arroz."},
+        ],
+        temperature=0,
+        tool_choice="auto",
+        tools=[{"type": "function", "function": {"name": "event_capture"}}],
+    )
+    span = Span()
+
+    _record_llm_request(span, request, Attributes)
+    record_llm_response(
+        span,
+        {
+            "choices": [
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "function": {
+                                    "name": "event_capture",
+                                    "arguments": '{"capture_action":"log_meal"}',
+                                },
+                            }
+                        ],
+                    },
+                }
+            ]
+        },
+    )
+
+    assert span.attributes["llm.input_messages.0.message.content"] == "Decide."
+    assert span.attributes["llm.input_messages.1.message.content"] == "Registra arroz."
+    assert span.attributes["llm.tools.0.tool.json_schema"] == (
+        '{"type":"function","function":{"name":"event_capture"}}'
+    )
+    assert span.attributes["llm.invocation_parameters"] == '{"temperature":0,"tool_choice":"auto"}'
+    assert span.attributes["llm.output_messages.0.message.tool_calls.0.tool_call.function.name"] == (
+        "event_capture"
+    )
+    assert span.attributes[
+        "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments"
+    ] == '{"capture_action":"log_meal"}'
+
+
+def test_async_litellm_call_forwards_active_phoenix_context(monkeypatch) -> None:
+    from victus_platform.llm import litellm_client
+
+    expected_parent_context = object()
+    request = LLMRequest(operation="agent.decision", model="test", messages=[])
+    expected = LLMResponse(text="ok")
+    client = LiteLLMClient()
+
+    monkeypatch.setattr(
+        litellm_client,
+        "capture_phoenix_trace_context",
+        lambda: expected_parent_context,
+    )
+
+    def complete(request_arg, *, parent_context=None):
+        assert request_arg is request
+        assert parent_context is expected_parent_context
+        return expected
+
+    monkeypatch.setattr(client, "complete", complete)
+
+    assert asyncio.run(client.acomplete(request)) is expected
 
 
 class FakeEventStore:
@@ -216,8 +374,3 @@ class FakeEventStore:
     def append(self, event: UserEventEnvelope) -> UserEventEnvelope:
         self.appended = event.model_copy(update={"event_seq": 1})
         return self.appended
-
-
-class FakeProfileGateway:
-    async def fetch(self) -> ProfileGatewayResponse:
-        return ProfileGatewayResponse(status_code=200, payload={"id": "u1"})

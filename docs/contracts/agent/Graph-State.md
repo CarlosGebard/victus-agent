@@ -43,26 +43,6 @@ type VictusGraphState = {
     decision?: string
     severity?: string
     categories?: string[]
-    matched_rules?: string[]
-    reason_codes?: string[]
-    blocked_tools?: string[]
-    allowed_next_route?: string
-    audit_required?: boolean
-  }
-  intent?: {
-    primary_intent?: string
-    confidence?: number
-    rationale?: string
-    target_node?: string
-    subintents?: string[]
-  }
-  projections?: {
-    user_profile?: UserProfileProjection
-    constraint?: ConstraintProjection
-    nutrition_status?: NutritionStatusProjection
-    planning_history?: PlanningHistoryProjection
-    loaded_at?: string
-    max_event_seq?: number
   }
   tool_context?: {
     allowed_tools?: string[]
@@ -96,7 +76,6 @@ type VictusGraphState = {
   response?: {
     mode?: "final" | "clarification" | "blocked" | "error"
     user_message?: string
-    internal_notes?: string[]
   }
   memory?: {
     recalled?: Array<Record<string, unknown>>
@@ -117,7 +96,8 @@ type VictusGraphState = {
 
 - `messages` uses LangGraph message reduction and remains bounded by finalization policy.
 - Authenticated identity originates in `request.user_id`; model output must not change it.
-- Nodes may read projections but must not write projection storage directly.
+- The graph does not preload domain projections. A tool may read only the projections it explicitly
+  needs through the shared tool runtime, and must not write projection storage directly.
 - Tool proposals are validated and executed through `ToolRuntime`.
 - Safety blocks prevent state-changing tool execution.
 - Checkpoint resumes require graph version `1` and the same owned conversation.

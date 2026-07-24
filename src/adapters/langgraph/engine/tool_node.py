@@ -41,7 +41,6 @@ def tool_node(name: str, runtime: ToolRuntime):
             tool_context=tool_context,
             intent={
                 "primary_intent": name,
-                "confidence": 1.0,
                 "target_node": name,
                 "subintents": [],
                 "rationale": data.get("reason", ""),

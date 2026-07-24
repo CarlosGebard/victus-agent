@@ -26,13 +26,14 @@ from adapters.langgraph.capabilities.contracts import (
 from adapters.langgraph.engine.graph import build_graph
 from adapters.langgraph.engine.state import GRAPH_VERSION
 from adapters.langgraph.runtime.persistence import postgres_graph_resources
-from bootstrap.runtime import projection_repository_scope
+from bootstrap.storage import prepare_agent_storage
 from victus_platform.database.engine import database_url
 from victus_platform.llm.factory import build_llm_client
 from victus_platform.telemetry.phoenix import (
     initialize_phoenix,
     phoenix_context,
     shutdown_phoenix,
+    trace_chat_request,
 )
 
 DEFAULT_HOST = "0.0.0.0"
@@ -40,8 +41,6 @@ DEFAULT_PORT = 8766
 DEBUG_STATE_FIELDS = (
     "request",
     "safety",
-    "intent",
-    "projections",
     "tool_context",
     "planning",
     "evidence",
@@ -86,13 +85,13 @@ def create_app(
                 app.state.store = None
                 yield
                 return
+            await prepare_agent_storage()
             async with postgres_graph_resources(database_url()) as resources:
                 client = build_llm_client()
                 app.state.graph = build_graph(
                     llm_client=client,
                     checkpointer=resources.checkpointer,
                     store=resources.store,
-                    projection_scope=projection_repository_scope,
                 )
                 app.state.store = resources.store
                 yield
@@ -149,38 +148,52 @@ def create_app(
             graph_input: Any = Command(resume=payload.resume.value)
         else:
             if snapshot.next:
-                return JSONResponse(
-                    {
-                        "error": "conversation is awaiting a response",
-                        "message": "Resume the pending interrupt instead of sending a new message.",
-                        "pending_nodes": [str(node) for node in snapshot.next],
-                    },
-                    status_code=409,
-                )
-            graph_input = {
-                "request": {
-                    "request_id": payload.request_id,
-                    "user_id": user_id,
-                    "raw_text": payload.message,
-                    "conversation_id": payload.conversation_id,
-                    "locale": payload.locale,
-                    "timezone": payload.timezone,
+                pending_nodes = [str(node) for node in snapshot.next]
+                if pending_nodes == ["clarification_interrupt"]:
+                    graph_input = Command(resume={"answer": payload.message})
+                else:
+                    return JSONResponse(
+                        {
+                            "error": "conversation is awaiting a response",
+                            "message": "Resume the pending interrupt instead of sending a new message.",
+                            "pending_nodes": pending_nodes,
+                        },
+                        status_code=409,
+                    )
+            else:
+                graph_input = {
+                    "request": {
+                        "request_id": payload.request_id,
+                        "user_id": user_id,
+                        "raw_text": payload.message,
+                        "conversation_id": payload.conversation_id,
+                        "locale": payload.locale,
+                        "timezone": payload.timezone,
+                    }
                 }
-            }
 
         started_at = datetime.now(timezone.utc)
         started_counter = perf_counter()
         try:
-            with phoenix_context(
-                session_id=payload.conversation_id,
-                user_id=user_id,
-                metadata={
-                    "request_id": payload.request_id,
-                    "resumed": payload.resume is not None,
-                    "graph_version": GRAPH_VERSION,
+            with trace_chat_request(
+                headers=dict(request.headers),
+                attributes={
+                    "victus.conversation_id": payload.conversation_id,
+                    "victus.request_id": payload.request_id,
+                    "victus.resumed": payload.resume is not None,
+                    "victus.graph.version": GRAPH_VERSION,
                 },
             ):
-                result = await request.app.state.graph.ainvoke(graph_input, config=config)
+                with phoenix_context(
+                    session_id=payload.conversation_id,
+                    user_id=user_id,
+                    metadata={
+                        "request_id": payload.request_id,
+                        "resumed": payload.resume is not None,
+                        "graph_version": GRAPH_VERSION,
+                    },
+                ):
+                    result = await request.app.state.graph.ainvoke(graph_input, config=config)
         except Exception as exc:
             body: dict[str, Any] = {"error": "agent execution failed"}
             if include_debug:
@@ -275,6 +288,8 @@ def _debug_value(value: Any, *, depth: int = 0) -> Any:
                 result["__truncated__"] = True
                 break
             field = str(key)
+            if field in {"additional_kwargs", "response_metadata"} and item == {}:
+                continue
             normalized = field.lower().replace("-", "_")
             result[field] = (
                 "[redacted]"
@@ -320,14 +335,12 @@ def _chat_response(conversation_id: str, state: dict[str, Any]) -> ChatResponse:
     mode = response.get("mode", "error")
     status = "blocked" if mode == "blocked" else "error" if mode == "error" else "completed"
     events = list((tool or {}).get("events_emitted", []))
-    trace_id = ((tool or {}).get("meta") or {}).get("trace_id")
     return ChatResponse(
         conversation_id=conversation_id,
         status=status,
         message=str(response.get("user_message") or ""),
         tool=tool,
         events=events,
-        trace_id=trace_id,
     )
 
 

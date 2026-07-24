@@ -10,22 +10,9 @@ Canonical registry: `src/tools/catalog.py`
 
 ## Tools
 
-- `event_capture` — Captures concrete user events such as meals, symptoms, biometrics, sleep, or
-  exercise. Path: `src/tools/event_capture/tool.py`
-- `profile_update` — Updates durable profile information such as restrictions and preferences.
-  Path: `src/tools/profile/tool.py`
-- `planning` — Manages goals, planning sessions, revisions, and validated planning artifacts.
-  Path: `src/tools/planning/tool.py`
-- `feedback` — Records or resolves user feedback about a plan, recommendation, meal, or answer.
-  Path: `src/tools/feedback/tool.py`
-- `evidence_answer` — Persists grounded claims and their supporting citations.
-  Path: `src/tools/evidence/tool.py`
-- `clarification` — Requests missing information and resumes the pending workflow when resolved.
-  Path: `src/tools/interaction/clarification.py`
-- `confirmation` — Requests explicit approval and resumes the pending action when resolved.
-  Path: `src/tools/interaction/confirmation.py`
-- `recuperar_perfil` — Retrieves the authenticated user's current Victus profile without modifying
-  it. Path: `src/tools/profile/remote.py`
+- `event_capture` — Captures meals and beverages from food items with required numeric quantities
+  in grams (`g`) or milliliters (`ml`); occurrence time defaults to today. Path:
+  `src/tools/event_capture/tool.py`
 
 ## Tool Result Contract
 
@@ -73,12 +60,6 @@ type ToolResult = {
   safety: {
     status: "ok" | "warning" | "blocked" | "needs_clarification"
     reasons: string[]
-  }
-  meta: {
-    confidence?: number
-    schema_version: 1
-    handler_version?: string
-    trace_id?: string
   }
   error?: {
     code: string

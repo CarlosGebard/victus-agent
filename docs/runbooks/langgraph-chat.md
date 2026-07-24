@@ -17,8 +17,9 @@ docker compose up -d --build
 docker compose ps
 ```
 
-The `db-migrate` and `langgraph-setup` jobs must finish successfully before chat starts. Both setup
-paths are idempotent; request-serving application startup does not run migrations.
+`agent` and `mcp` wait for PostgreSQL and apply pending application migrations during startup under
+one shared database lock. The agent also prepares its LangGraph checkpoint and Store tables before
+accepting traffic.
 
 # Run
 
@@ -27,7 +28,7 @@ Check both HTTP services:
 ```bash
 curl http://localhost:8766/health
 curl http://localhost:8765/health
-docker compose logs -f chat mcp
+docker compose logs -f agent mcp
 ```
 
 Stop all services while retaining PostgreSQL data with `docker compose down`. Use
@@ -45,7 +46,7 @@ curl -X POST http://localhost:8766/chat \
 For controlled debugging, enable the route before starting the service:
 
 ```bash
-VICTUS_CHAT_DEBUG_ENABLED=true docker compose up -d --build chat
+VICTUS_CHAT_DEBUG_ENABLED=true docker compose up -d --build agent
 ```
 
 The webapp backend may then forward the same user JWT and inspect the bounded graph state:
@@ -77,6 +78,27 @@ curl -X POST http://localhost:8766/chat \
 - Rebuild domain projections with `uv run victus projections-rebuild <user_id>` after event recovery.
 - Do not fabricate checkpoints from legacy `pending_interaction_state`; ask the user to repeat it.
 - Legacy summary/pending tables remain read-only compatibility data until a separately audited drop.
+
+# Phoenix observability
+
+For the shared local Compose stack, configure both the gateway and agent with:
+
+```bash
+PHOENIX_TRACING_ENABLED=true
+PHOENIX_COLLECTOR_ENDPOINT=http://victus-phoenix:6006
+PHOENIX_PROJECT_NAME=victus-local
+OPENINFERENCE_HIDE_INPUTS=false
+OPENINFERENCE_HIDE_OUTPUTS=false
+OPENINFERENCE_HIDE_INPUT_MESSAGES=false
+OPENINFERENCE_HIDE_OUTPUT_MESSAGES=false
+```
+
+Phoenix project `victus-local` shows one chat trace rooted at `webapp.chat.stream`, followed by
+`gateway.agent.request`, `agent.http.chat`, and LangGraph nodes. The `llm.agent_decision` span
+shows the exact provider-bound input JSON plus readable OpenInference input messages, advertised
+tool schemas, invocation parameters, output message, and output tool calls. Inspect
+`victus.decision`, `victus.tool.status`, and `victus.clarification.missing_fields` before using raw
+debug output.
 
 # Troubleshooting
 

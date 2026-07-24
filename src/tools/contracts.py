@@ -40,13 +40,6 @@ class ToolSafety(ContractModel):
     reasons: list[str] = Field(default_factory=list)
 
 
-class ToolMeta(ContractModel):
-    confidence: float | None = None
-    schema_version: Literal[1] = 1
-    handler_version: str | None = None
-    trace_id: str | None = None
-
-
 class ToolError(ContractModel):
     code: str
     message: str
@@ -59,7 +52,6 @@ class ToolResult(ContractModel):
     warnings: list[str] = Field(default_factory=list)
     clarification: ClarificationRequest | None = None
     safety: ToolSafety = Field(default_factory=lambda: ToolSafety(status="ok"))
-    meta: ToolMeta = Field(default_factory=ToolMeta)
     error: ToolError | None = None
 
 
@@ -72,6 +64,7 @@ class ToolIdentity(ContractModel):
 class ToolContext(ContractModel):
     source: ToolExposure
     identity: ToolIdentity = Field(default_factory=ToolIdentity)
+    original_text: str | None = None
     trace_id: str | None = None
     idempotency_key: str | None = None
 

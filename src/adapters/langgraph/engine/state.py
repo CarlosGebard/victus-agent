@@ -5,12 +5,6 @@ from typing import Annotated, Any, Literal, TypedDict
 from langgraph.graph.message import add_messages
 
 from domain.events.refs import ToolEventRef
-from domain.projections.models import (
-    ConstraintProjection,
-    NutritionStatusProjection,
-    PlanningHistoryProjection,
-    UserProfileProjection,
-)
 
 GRAPH_VERSION = "1"
 
@@ -32,34 +26,13 @@ class SafetyState(TypedDict, total=False):
     decision: str
     severity: str
     categories: list[str]
-    matched_rules: list[str]
-    reason_codes: list[str]
-    blocked_tools: list[str]
-    allowed_next_route: str
-    audit_required: bool
-
-
-class IntentState(TypedDict, total=False):
-    primary_intent: str
-    confidence: float
-    rationale: str
-    target_node: str
-    subintents: list[str]
-
-
-class ProjectionState(TypedDict, total=False):
-    user_profile: UserProfileProjection
-    constraint: ConstraintProjection
-    nutrition_status: NutritionStatusProjection
-    planning_history: PlanningHistoryProjection
-    loaded_at: str
-    max_event_seq: int
 
 
 class ToolContextState(TypedDict, total=False):
     allowed_tools: list[str]
     proposed_action: dict[str, Any]
     last_tool_result: dict[str, Any]
+    pending_clarification: dict[str, Any]
     tool_results: list[dict[str, Any]]
     loop_count: int
     confirmation: dict[str, Any]
@@ -92,7 +65,6 @@ class ClarificationState(TypedDict, total=False):
 class ResponseState(TypedDict, total=False):
     mode: Literal["final", "clarification", "blocked", "error"]
     user_message: str
-    internal_notes: list[str]
 
 
 class MemoryState(TypedDict, total=False):
@@ -112,8 +84,6 @@ class VictusGraphState(TypedDict, total=False):
     messages: Annotated[list[Any], add_messages]
     request: RequestState
     safety: SafetyState
-    intent: IntentState
-    projections: ProjectionState
     tool_context: ToolContextState
     planning: PlanningState
     evidence: EvidenceState

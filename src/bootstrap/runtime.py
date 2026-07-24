@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from typing import Iterator
 
 from tools.runtime import ToolRuntime
-from tools.contracts import ToolMeta, ToolResult, ToolSafety, ToolServices
+from tools.contracts import ToolResult, ToolSafety, ToolServices
 from victus_platform.identity.profile_gateway import BackendProfileGateway
 from victus_platform.safety.rules import SafetyPrecheck, SafetyPrecheckInput
 from victus_platform.telemetry import new_trace_id
@@ -63,8 +63,7 @@ def safety_precheck(input_data, context) -> ToolResult | None:
         return None
     return ToolResult(
         status="blocked",
-        safety=ToolSafety(status="blocked", reasons=result.reason_codes),
-        meta=ToolMeta(trace_id=context.trace_id),
+        safety=ToolSafety(status="blocked", reasons=result.reasons),
     )
 
 

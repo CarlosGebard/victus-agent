@@ -53,9 +53,10 @@ The optional `phoenix` dependency group contains:
 - `openinference-instrumentation-langchain>=0.1,<1`
 
 `victus_platform.telemetry.phoenix` owns registration, shutdown, request context, LLM span creation,
-safe scalar metadata, and token usage attributes. The HTTP application starts and flushes the tracer
-through its lifespan. `LiteLLMClient` creates one LLM span per completion without adding prompt,
-response, or secret values from that manual boundary.
+safe scalar metadata, token usage, and standard OpenInference request and response attributes. The
+HTTP application starts and flushes the tracer through its lifespan. `LiteLLMClient` creates one LLM
+span per completion and records the exact provider-bound messages, advertised tool schemas,
+invocation parameters, output message, and output tool calls. It does not record credentials.
 
 The Compose service uses `arizephoenix/phoenix:version-19.0.0`, persists data in
 `victus_phoenix_data`, and exposes the Phoenix HTTP UI and collector on host port `6007`. The
@@ -81,7 +82,7 @@ Open the UI at `http://localhost:6007`.
 Start chat with trace export enabled:
 
 ```bash
-PHOENIX_TRACING_ENABLED=true docker compose up -d --build chat
+PHOENIX_TRACING_ENABLED=true docker compose up -d --build agent
 ```
 
 The containerized chat service sends traces to `http://phoenix:6006`. A process running directly on

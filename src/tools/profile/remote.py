@@ -5,7 +5,6 @@ from typing import Any, cast
 from tools.contracts import (
     ToolContext,
     ToolExecution,
-    ToolMeta,
     ToolResult,
     ToolServices,
     ToolStatus,
@@ -48,9 +47,7 @@ async def execute(
             data={
                 "summary": _profile_summary(profile),
                 "profile": profile if isinstance(profile, dict) else None,
-            },
-            meta=ToolMeta(handler_version="recuperar_perfil.v1", trace_id=context.trace_id),
-        )
+            },        )
     )
 
 
@@ -59,9 +56,7 @@ def _result(status: ToolStatus, summary: str, warning: str | None = None) -> Too
         result=ToolResult(
             status=status,
             data={"summary": summary},
-            warnings=[warning] if warning else [],
-            meta=ToolMeta(handler_version="recuperar_perfil.v1"),
-        )
+            warnings=[warning] if warning else [],        )
     )
 
 

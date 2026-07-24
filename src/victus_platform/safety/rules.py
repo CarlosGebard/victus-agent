@@ -31,11 +31,7 @@ class SafetyPrecheckResult(BaseModel):
     decision: Literal["allow", "route_to_safety_triage", "emergency_escalation"]
     severity: Literal["none", "high", "critical"]
     categories: list[str]
-    allowed_next_route: str
-    matched_rules: list[str] = Field(default_factory=list)
-    blocked_tools: list[str] = Field(default_factory=list)
-    reason_codes: list[str] = Field(default_factory=list)
-    audit_required: bool = False
+    reasons: list[str] = Field(default_factory=list)
 
 
 def load_rules() -> list[SafetyRule]:
@@ -88,18 +84,13 @@ class SafetyPrecheck:
                 decision="allow",
                 severity="none",
                 categories=["none"],
-                allowed_next_route="ToolRouter",
             )
         critical = any(signal.severity == "critical" for signal in signals)
         return SafetyPrecheckResult(
             decision="emergency_escalation" if critical else "route_to_safety_triage",
             severity="critical" if critical else "high",
             categories=["self_harm"],
-            allowed_next_route="EmergencySupportResponse" if critical else "SafetyTriageRoute",
-            matched_rules=[signal.rule_id for signal in signals],
-            blocked_tools=["event_capture", "profile_update", "planning"],
-            reason_codes=[signal.reason_code for signal in signals],
-            audit_required=True,
+            reasons=[signal.reason_code for signal in signals],
         )
 
 

@@ -13,7 +13,6 @@ from tools.contracts import (
     ToolError,
     ToolExecution,
     ToolInvocation,
-    ToolMeta,
     ToolResult,
     ToolServices,
     ToolStatus,
@@ -120,15 +119,12 @@ class ToolRuntime:
                                 seq=appended.event_seq,
                             )
                         )
-        meta = execution.result.meta.model_copy(update={"trace_id": context.trace_id})
-        return execution.result.model_copy(update={"events_emitted": refs, "meta": meta})
+        return execution.result.model_copy(update={"events_emitted": refs})
 
     def _error_result(
         self, invocation: ToolInvocation, code: str, message: str, status: ToolStatus
     ) -> ToolResult:
-        trace_id = invocation.context.trace_id or self._trace_id_factory()
         return ToolResult(
             status=status,
             error=ToolError(code=code, message=message),
-            meta=ToolMeta(trace_id=trace_id),
         )

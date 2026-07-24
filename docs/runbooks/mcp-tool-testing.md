@@ -133,23 +133,16 @@ Successful capture:
 ```json
 {
   "name": "event_capture",
-  "arguments": {"user_id": "mcp-smoke-user", "normalized_text": "hoy comi arroz"}
+  "arguments": {
+    "items": [{"name": "arroz", "quantity": 100, "unit": "g"}]
+  }
 }
 ```
 
-Expected: `status=success`, `data.capture_action=log_meal`, and one `meal.logged` reference when the
-database is enabled.
+Expected: `status=success` and one `meal.logged` reference when the database is enabled.
 
-Safety block:
-
-```json
-{
-  "name": "event_capture",
-  "arguments": {"user_id": "mcp-smoke-user", "normalized_text": "me quiero suicidar"}
-}
-```
-
-Expected: `status=blocked`, `safety.status=blocked`, and no emitted event.
+Any argument other than `items` or `occurred_at_text` is rejected. A missing quantity or unit
+returns a clarification request and does not emit an event.
 
 Interaction continuation:
 
