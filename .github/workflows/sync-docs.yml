@@ -28,7 +28,7 @@ jobs:
           API_TOKEN_GITHUB: ${{ secrets.SYNC_DOCS }}
         with:
           source-directory: ".docs-sync"
-          destination-github-username: "CarlosGebard"
+          destination-github-username: "victus-fit"
           destination-repository-name: "victus-docs"
           target-directory: "repos/victus-agent"
           target-branch: "main"
