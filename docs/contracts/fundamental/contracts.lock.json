@@ -1,8 +1,0 @@
-{
-  "contracts": [],
-  "registry": "contracts/registry.json",
-  "source": "https://github.com/CarlosGebard/victus-docs.git",
-  "subscriptions": [
-    "fundamental"
-  ]
-}

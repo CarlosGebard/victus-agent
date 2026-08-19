@@ -106,5 +106,5 @@ the agent uses them.
 `docs/Events.md` describes active events, their emitting tools, common envelope, and how they connect
 tools, persistence, projections, and the agent.
 
-Specialized agent, database, safety, event-registry, and imported contracts remain under
+Specialized agent, database, safety, event-registry, and domain contracts remain under
 `docs/contracts/`.

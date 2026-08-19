@@ -24,7 +24,6 @@ victus = "adapters.cli:main"
 victus-mcp = "adapters.mcp.server:main"
 victus-mcp-http = "adapters.mcp.transport:main"
 victus-chat-http = "adapters.http.app:main"
-contracts = "ops.scripts.contracts:main"
 
 [project.optional-dependencies]
 embeddings = [
