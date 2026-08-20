@@ -131,7 +131,8 @@ Do not commit secrets or print `.env` contents.
 
 ## Docs Sync
 
-Repository docs are synced to the central docs repository by `.github/workflows/sync-docs.yml`.
+Changes to repository documentation on `main` are published to TechDocs by
+`.github/workflows/publish-techdocs.yml`.
 
 See:
 
