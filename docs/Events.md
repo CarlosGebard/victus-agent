@@ -34,6 +34,14 @@ Emitter: `src/tools/event_capture/actions.py`
 `event_capture` currently emits only `meal.logged`. Historical event contracts for other categories
 remain readable by the event registry and projections, but are not accepted by this tool.
 
+### Fullstack manual-meal import
+
+The fullstack may deliver a manually logged meal through a dedicated authenticated ingestion
+boundary. The accepted delivery becomes a `meal.logged` event with envelope source `import`; it does
+not execute the conversational `event_capture` tool. Identity, grouping, idempotency, validation,
+and correction rules are defined in
+[Fullstack Manual Meal Import](contracts/Fullstack-Manual-Meal-Import.md).
+
 ### `profile_update`
 
 Emitter: `src/tools/profile/actions/`
